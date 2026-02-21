@@ -1,0 +1,197 @@
+import { describe, test, expect } from "vitest";
+import { formatAdoc } from "../helpers.js";
+
+describe("unordered list formatting", () => {
+  // Canonical single-item list passes through unchanged.
+  test("single item preserved", async () => {
+    const input = "* Item one\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Multi-item list preserved.
+  test("multi-item list preserved", async () => {
+    const input = "* First\n* Second\n* Third\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Nested list preserved with correct markers.
+  test("nested list preserved", async () => {
+    const input = "* Parent\n** Child\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // One blank line before a list when preceded by a paragraph.
+  test("blank line between paragraph and list", async () => {
+    const input = "Some text.\n\n* Item\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // One blank line after a list when followed by a paragraph.
+  test("blank line between list and paragraph", async () => {
+    const input = "* Item\n\nSome text.\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Multiple blank lines between a paragraph and list are collapsed.
+  test("multiple blank lines before list collapsed", async () => {
+    const input = "Some text.\n\n\n\n* Item\n";
+    const expected = "Some text.\n\n* Item\n";
+    expect(await formatAdoc(input)).toBe(expected);
+  });
+
+  // Three-level nesting preserved.
+  test("three-level nesting preserved", async () => {
+    const input = "* Level 1\n** Level 2\n*** Level 3\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // All 5 nesting levels preserved through formatting.
+  test("five-level nesting preserved", async () => {
+    const input =
+      "* L1\n** L2\n*** L3\n**** L4\n***** L5\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Multiple siblings at nested level.
+  test("sibling items at nested level", async () => {
+    const input = "* Parent\n** Child A\n** Child B\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Back to parent level after nesting.
+  test("return to parent level after nesting", async () => {
+    const input = "* First\n** Nested\n* Second\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Multi-level collapse: depth 3 back to depth 1 in one step.
+  test("return to root after deep nesting", async () => {
+    const input =
+      "* First\n** Nested\n*** Deep\n* Second\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // List item text is reflowed within printWidth.
+  test("long list item text is reflowed", async () => {
+    const input =
+      "* This is a very long list item that should be reflowed because it exceeds the default print width of eighty characters in total\n";
+    const result = await formatAdoc(input);
+    // Should be reflowed (wrapped) — verify it contains a newline within the item
+    const lines = result.split("\n");
+    // First line starts with *, continuation lines are indented
+    expect(lines[0].startsWith("* ")).toBe(true);
+    expect(lines.length).toBeGreaterThan(2); // at least 2 lines + trailing newline
+  });
+
+  // The `-` marker is an alternative level-1 unordered list marker.
+  // The formatter normalizes it to `*`.
+  test("hyphen marker normalized to asterisk", async () => {
+    const input = "- Item\n";
+    const expected = "* Item\n";
+    expect(await formatAdoc(input)).toBe(expected);
+  });
+
+  // Multiple `-` items are normalized to `*`.
+  test("multiple hyphen items normalized", async () => {
+    const input = "- First\n- Second\n- Third\n";
+    const expected = "* First\n* Second\n* Third\n";
+    expect(await formatAdoc(input)).toBe(expected);
+  });
+
+  // An unordered list followed by an ordered list are two separate
+  // blocks with a blank line between them.
+  test("unordered list followed by ordered list", async () => {
+    const input = "* Unordered\n\n. Ordered\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // A list immediately after a section heading gets a blank-line
+  // separator.
+  test("list after section heading", async () => {
+    const input = "== Section\n\n* Item\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // A list immediately after a comment gets a blank-line separator.
+  test("list after comment", async () => {
+    const input = "// A comment\n\n* Item\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // A list after a document title and header attributes.
+  test("list after document header", async () => {
+    const input = "= Title\n:toc:\n\n* Item\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // A list after a standalone attribute entry.
+  test("list after attribute entry", async () => {
+    const input = ":key: value\n\n* Item\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Short indented continuation lines are reflowed into one
+  // line when they fit within print width.
+  test("short indented continuation is reflowed", async () => {
+    const input =
+      "* First line\n  continuation line\n";
+    const expected =
+      "* First line continuation line\n";
+    expect(await formatAdoc(input)).toBe(expected);
+  });
+
+  // Short flush continuation lines are reflowed into one line.
+  test("short flush continuation is reflowed", async () => {
+    const input =
+      "* First line\ncontinuation line\n";
+    const expected =
+      "* First line continuation line\n";
+    expect(await formatAdoc(input)).toBe(expected);
+  });
+
+  // Long list item text is reflowed AND gets proper continuation
+  // indentation (2 spaces for `* ` marker).
+  test("reflowed list item has correct continuation indent", async () => {
+    const input =
+      "* This is a very long list item that should be reflowed because it exceeds the default print width of eighty characters in total\n";
+    const result = await formatAdoc(input);
+    const lines = result.split("\n");
+    // First line starts with `* `
+    expect(lines[0].startsWith("* ")).toBe(true);
+    // Continuation lines start with exactly 2 spaces (matching
+    // the `* ` marker width)
+    for (let index = 1; index < lines.length - 1; index += 1) {
+      expect(lines[index]).toMatch(/^ {2}\S/v);
+    }
+  });
+
+  // Continuation indent width matches marker width for `** `.
+  // Use long enough text to force a line break.
+  test("continuation indent matches depth-2 marker", async () => {
+    const input =
+      "* Parent\n** This is a very long nested list item that should be reflowed because it exceeds the default print width of eighty characters\n";
+    const result = await formatAdoc(input);
+    const lines = result.split("\n");
+    // First line starts with `** `
+    expect(lines[1].startsWith("** ")).toBe(true);
+    // Continuation lines start with exactly 3 spaces (matching
+    // the `** ` marker width)
+    for (let index = 2; index < lines.length - 1; index += 1) {
+      expect(lines[index]).toMatch(/^ {3}\S/v);
+    }
+  });
+
+  // Ordered list continuation aligns to `. ` (2 chars).
+  test("ordered list continuation indent", async () => {
+    const input =
+      ". This is a very long ordered list item that should be reflowed because it exceeds the default print width of eighty characters total\n";
+    const result = await formatAdoc(input);
+    const lines = result.split("\n");
+    expect(lines[0].startsWith(". ")).toBe(true);
+    // Continuation lines start with exactly 2 spaces (matching
+    // the `. ` marker width)
+    for (let index = 1; index < lines.length - 1; index += 1) {
+      expect(lines[index]).toMatch(/^ {2}\S/v);
+    }
+  });
+});
