@@ -23,10 +23,16 @@
                   "name": "text",
                   "type": "string",
                   "value": "phone",
-                  "location": [{ "line": 2, "col": 3 }, { "line": 2, "col": 7 }]
+                  "location": [
+                    { "line": 2, "col": 3 },
+                    { "line": 2, "col": 7 }
+                  ]
                 }
               ],
-              "location": [{ "line": 2, "col": 1 }, { "line": 2, "col": 7 }]
+              "location": [
+                { "line": 2, "col": 1 },
+                { "line": 2, "col": 7 }
+              ]
             },
             {
               "name": "listItem",
@@ -37,10 +43,16 @@
                   "name": "text",
                   "type": "string",
                   "value": "wallet",
-                  "location": [{ "line": 3, "col": 3 }, { "line": 3, "col": 8 }]
+                  "location": [
+                    { "line": 3, "col": 3 },
+                    { "line": 3, "col": 8 }
+                  ]
                 }
               ],
-              "location": [{ "line": 3, "col": 1 }, { "line": 3, "col": 8 }]
+              "location": [
+                { "line": 3, "col": 1 },
+                { "line": 3, "col": 8 }
+              ]
             },
             {
               "name": "listItem",
@@ -51,17 +63,32 @@
                   "name": "text",
                   "type": "string",
                   "value": "keys",
-                  "location": [{ "line": 4, "col": 3 }, { "line": 4, "col": 6 }]
+                  "location": [
+                    { "line": 4, "col": 3 },
+                    { "line": 4, "col": 6 }
+                  ]
                 }
               ],
-              "location": [{ "line": 4, "col": 1 }, { "line": 4, "col": 6 }]
+              "location": [
+                { "line": 4, "col": 1 },
+                { "line": 4, "col": 6 }
+              ]
             }
           ],
-          "location": [{ "line": 2, "col": 1 }, { "line": 4, "col": 6 }]
+          "location": [
+            { "line": 2, "col": 1 },
+            { "line": 4, "col": 6 }
+          ]
         }
       ],
-      "location": [{ "line": 1, "col": 1 }, { "line": 5, "col": 4 }]
+      "location": [
+        { "line": 1, "col": 1 },
+        { "line": 5, "col": 4 }
+      ]
     }
   ],
-  "location": [{ "line": 1, "col": 1 }, { "line": 5, "col": 4 }]
+  "location": [
+    { "line": 1, "col": 1 },
+    { "line": 5, "col": 4 }
+  ]
 }

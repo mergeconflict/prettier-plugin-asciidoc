@@ -15,7 +15,7 @@ import type { DocumentNode, BlockNode } from "./ast.js";
 import { asciidocLexer } from "./parse/tokens.js";
 import { asciidocParser } from "./parse/grammar.js";
 import { AstBuilder } from "./parse/ast-builder.js";
-import { EMPTY } from "./constants.js";
+import { unreachable } from "./unreachable.js";
 const astBuilder = new AstBuilder();
 
 // Prettier calls locStart/locEnd to determine node positions for cursor
@@ -41,25 +41,26 @@ function isDocumentNode(value: unknown): value is DocumentNode {
 
 /** Run the full parse pipeline: lex → parse → build AST. */
 export function parse(text: string): DocumentNode {
-  const { tokens, errors: lexErrors } = asciidocLexer.tokenize(text);
-
-  if (lexErrors.length > EMPTY) {
-    const [firstError] = lexErrors;
-    throw new Error(`Lexer error: ${firstError.message}`);
-  }
+  // The lexer may produce errors for unrecognized characters,
+  // but still returns a usable token stream. We don't throw
+  // on lexer errors — the formatter should degrade gracefully
+  // rather than crash on input it doesn't fully understand.
+  const { tokens } = asciidocLexer.tokenize(text);
 
   asciidocParser.input = tokens;
   const cst = asciidocParser.document();
 
-  const { errors: parseErrors } = asciidocParser;
-  if (parseErrors.length > EMPTY) {
-    const [firstError] = parseErrors;
-    throw new Error(`Parser error: ${firstError.message}`);
-  }
+  // Chevrotain's recovery strategies (enabled via
+  // recoveryEnabled: true) produce a partial CST even when
+  // rules fail. The CST may contain recoveredNode flags, but
+  // the AST builder handles these — recovered regions pass
+  // through as whatever partial structure was recognized.
+  // We don't throw on parser errors for the same reason as
+  // lexer errors: partial output beats a crash.
 
   const result: unknown = astBuilder.visit(cst, text);
   if (!isDocumentNode(result)) {
-    throw new Error("AST builder did not return a DocumentNode");
+    unreachable("AST builder did not return a DocumentNode");
   }
   return result;
 }

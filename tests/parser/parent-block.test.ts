@@ -75,9 +75,7 @@ describe("sidebar block parsing", () => {
 
   // Sidebar block with multiple inner paragraphs.
   test("multiple inner paragraphs", () => {
-    const { children } = parse(
-      "****\nFirst.\n\nSecond.\n****\n",
-    );
+    const { children } = parse("****\nFirst.\n\nSecond.\n****\n");
     const block = firstParentBlock(children);
     expect(block.variant).toBe("sidebar");
     expect(block.children).toHaveLength(2);
@@ -105,9 +103,7 @@ describe("open block parsing", () => {
 
   // Open block with multiple inner paragraphs.
   test("multiple inner paragraphs", () => {
-    const { children } = parse(
-      "--\nFirst.\n\nSecond.\n--\n",
-    );
+    const { children } = parse("--\nFirst.\n\nSecond.\n--\n");
     const block = firstParentBlock(children);
     expect(block.variant).toBe("open");
     expect(block.children).toHaveLength(2);
@@ -135,9 +131,7 @@ describe("quote block parsing", () => {
 
   // Quote block with multiple inner paragraphs.
   test("multiple inner paragraphs", () => {
-    const { children } = parse(
-      "____\nFirst.\n\nSecond.\n____\n",
-    );
+    const { children } = parse("____\nFirst.\n\nSecond.\n____\n");
     const block = firstParentBlock(children);
     expect(block.variant).toBe("quote");
     expect(block.children).toHaveLength(2);
@@ -147,9 +141,7 @@ describe("quote block parsing", () => {
 describe("parent block context", () => {
   // Parent block between paragraphs.
   test("between paragraphs", () => {
-    const { children } = parse(
-      "Before.\n\n====\nInside.\n====\n\nAfter.\n",
-    );
+    const { children } = parse("Before.\n\n====\nInside.\n====\n\nAfter.\n");
     expect(children).toHaveLength(3);
     expect(children[0].type).toBe("paragraph");
     expect(children[1].type).toBe("parentBlock");
@@ -167,9 +159,7 @@ describe("parent block context", () => {
 
   // Nested parent blocks: example inside sidebar.
   test("nested parent blocks", () => {
-    const { children } = parse(
-      "****\n====\nNested content.\n====\n****\n",
-    );
+    const { children } = parse("****\n====\nNested content.\n====\n****\n");
     const outer = firstParentBlock(children);
     expect(outer.variant).toBe("sidebar");
     expect(outer.children).toHaveLength(1);
@@ -182,9 +172,7 @@ describe("parent block context", () => {
 
   // A listing block (leaf) inside a parent block.
   test("leaf block inside parent block", () => {
-    const { children } = parse(
-      "====\n----\ncode\n----\n====\n",
-    );
+    const { children } = parse("====\n----\ncode\n----\n====\n");
     const block = firstParentBlock(children);
     expect(block.variant).toBe("example");
     expect(block.children).toHaveLength(1);

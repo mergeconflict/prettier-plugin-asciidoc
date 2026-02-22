@@ -6,11 +6,7 @@
 // duplication.
 import type { IToken } from "chevrotain";
 import type { Location } from "../ast.js";
-import { FIRST, LAST_ELEMENT } from "../constants.js";
-
-// Chevrotain uses 1-based lines/columns, 0-based offsets.
-export const FIRST_LINE = 1;
-export const FIRST_COLUMN = 1;
+import { FIRST, FIRST_COLUMN, FIRST_LINE, LAST_ELEMENT } from "../constants.js";
 // Chevrotain's endOffset is inclusive; we add 1 for Prettier's
 // exclusive convention.
 const ONE_PAST_END = 1;

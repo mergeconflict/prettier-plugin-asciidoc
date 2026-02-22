@@ -3,6 +3,9 @@
     "name": "text",
     "type": "string",
     "value": "hello",
-    "location": [{ "line": 1, "col": 1 }, { "line": 1, "col": 5 }]
+    "location": [
+      { "line": 1, "col": 1 },
+      { "line": 1, "col": 5 }
+    ]
   }
 ]

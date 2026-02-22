@@ -53,8 +53,7 @@ describe("paragraph-form pass block formatting", () => {
 describe("paragraph-form verse block formatting", () => {
   // [verse] + content — line breaks preserved.
   test("[verse] + content with line breaks preserved", async () => {
-    const input =
-      "[verse]\nRoses are red,\nViolets are blue.\n";
+    const input = "[verse]\nRoses are red,\nViolets are blue.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
@@ -75,8 +74,7 @@ describe("paragraph-form quote block formatting", () => {
 
   // [quote] with attribution.
   test("[quote, Author, Source] preserved", async () => {
-    const input =
-      "[quote, Shakespeare, Hamlet]\nTo be or not to be.\n";
+    const input = "[quote, Shakespeare, Hamlet]\nTo be or not to be.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 });
@@ -101,32 +99,27 @@ describe("paragraph-form block context formatting", () => {
   // Paragraph-form block between paragraphs gets blank line
   // separation.
   test("between paragraphs", async () => {
-    const input =
-      "Before.\n\n[source]\nsome code\n\nAfter.\n";
+    const input = "Before.\n\n[source]\nsome code\n\nAfter.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   // Block metadata stacks with paragraph-form block.
   test("block title stacks with paragraph-form block", async () => {
-    const input =
-      ".My Code\n[source]\nsome code\n";
+    const input = ".My Code\n[source]\nsome code\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   // Anchor + attribute list + paragraph-form block.
   test("anchor + [source] + content stacks", async () => {
-    const input =
-      "[[my-id]]\n[source]\nsome code\n";
+    const input = "[[my-id]]\n[source]\nsome code\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   // Blank line between metadata and paragraph-form block
   // is removed.
   test("blank line between attr list and content is removed", async () => {
-    const input =
-      "[source,ruby]\n\nputs 'hello'\n";
-    const expected =
-      "[source,ruby]\nputs 'hello'\n";
+    const input = "[source,ruby]\n\nputs 'hello'\n";
+    const expected = "[source,ruby]\nputs 'hello'\n";
     expect(await formatAdoc(input)).toBe(expected);
   });
 

@@ -68,12 +68,8 @@ describe("discrete heading parsing", () => {
       // The section should contain: attr list, discrete heading,
       // and paragraph as children.
       expect(document.children[0].children).toHaveLength(3);
-      expect(document.children[0].children[0].type).toBe(
-        "blockAttributeList",
-      );
-      expect(document.children[0].children[1].type).toBe(
-        "discreteHeading",
-      );
+      expect(document.children[0].children[0].type).toBe("blockAttributeList");
+      expect(document.children[0].children[1].type).toBe("discreteHeading");
       expect(document.children[0].children[2].type).toBe("paragraph");
     }
   });

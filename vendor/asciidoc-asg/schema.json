@@ -21,10 +21,7 @@
       "additionalProperties": false,
       "patternProperties": {
         "^[a-zA-Z0-9_][-a-zA-Z0-9_]*$": {
-          "oneOf": [
-            { "type": "string" },
-            { "type": "null" }
-          ]
+          "oneOf": [{ "type": "string" }, { "type": "null" }]
         }
       }
     },
@@ -96,10 +93,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "oneOf": [
-          { "$ref": "#/$defs/block" },
-          { "$ref": "#/$defs/section" }
-        ]
+        "oneOf": [{ "$ref": "#/$defs/block" }, { "$ref": "#/$defs/section" }]
       }
     },
     "nonSectionBlockBody": {

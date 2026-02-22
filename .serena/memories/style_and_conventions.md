@@ -16,6 +16,7 @@
 ## Linting
 
 ESLint 9 with:
+
 - typescript-eslint strict + stylistic type-checked
 - eslint-config-love
 - eslint-plugin-unicorn recommended

@@ -41,8 +41,7 @@ describe("paragraph reflow", () => {
 
   // Comment content must NOT be reflowed — it is verbatim.
   test("comment content is not reflowed", async () => {
-    const input =
-      "// This is a comment that should stay on one line\n";
+    const input = "// This is a comment that should stay on one line\n";
     expect(await formatAdoc(input)).toBe(
       "// This is a comment that should stay on one line\n",
     );

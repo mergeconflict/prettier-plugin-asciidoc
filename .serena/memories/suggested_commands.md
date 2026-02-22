@@ -10,6 +10,7 @@
 ## Version Control
 
 This project uses **jj (Jujutsu)**, not git:
+
 - `jj st` — status
 - `jj diff --git` — show changes
 - `jj describe -m "message"` — set commit message

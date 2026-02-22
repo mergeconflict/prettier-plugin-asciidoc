@@ -41,3 +41,13 @@ export const LOOKAHEAD = 1;
 // characters longer than the conflicting line to avoid
 // ambiguity on re-parse.
 export const SAFE_DELIMITER_PAD = 1;
+
+// Chevrotain uses 1-based lines and columns. These mark the
+// origin position in a source file.
+export const FIRST_LINE = 1;
+export const FIRST_COLUMN = 1;
+
+// A single newline character (`\n`). Used when computing content
+// boundaries inside delimited blocks — the newline after the open
+// delimiter and before the close delimiter is not part of the content.
+export const NEWLINE_LENGTH = 1;

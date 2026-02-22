@@ -72,6 +72,7 @@ Level 4 Title
 Underline characters: `=` (level 0), `-` (level 1), `~` (level 2), `^` (level 3), `+` (level 4). The underline must be within ±2 characters of the title length. Our formatter normalizes these to ATX-style.
 
 A **discrete heading** is a heading that doesn't create a section (no nesting):
+
 ```
 [discrete]
 === Not a Section
@@ -101,23 +102,23 @@ This is a normal paragraph.
 
 ### Constrained (at word boundaries)
 
-| Syntax | Meaning |
-|--------|---------|
-| `*bold*` | strong |
-| `_italic_` | emphasis |
-| `` `mono` `` | code/monospace |
-| `#highlight#` | mark |
-| `^super^` | superscript |
-| `~sub~` | subscript |
+| Syntax        | Meaning        |
+| ------------- | -------------- |
+| `*bold*`      | strong         |
+| `_italic_`    | emphasis       |
+| `` `mono` ``  | code/monospace |
+| `#highlight#` | mark           |
+| `^super^`     | superscript    |
+| `~sub~`       | subscript      |
 
 ### Unconstrained (can appear mid-word)
 
-| Syntax | Meaning |
-|--------|---------|
-| `**bold**` | strong |
-| `__italic__` | emphasis |
-| ` `` mono `` ` | code |
-| `##highlight##` | mark |
+| Syntax          | Meaning  |
+| --------------- | -------- |
+| `**bold**`      | strong   |
+| `__italic__`    | emphasis |
+| ` `` mono `` `  | code     |
+| `##highlight##` | mark     |
 
 Constrained forms require the mark to be at a word boundary (preceded/followed by whitespace, punctuation, or start/end of line). Unconstrained forms use doubled marks and can appear anywhere.
 
@@ -200,6 +201,7 @@ The parser must recognize these to avoid misinterpreting the parentheses as regu
 ### Hard line break
 
 A `+` at the end of a line forces a line break:
+
 ```
 First line +
 Second line
@@ -356,11 +358,11 @@ longer delimiter (still a listing block)
 
 ### Leaf blocks (content is NOT parsed as AsciiDoc)
 
-| Delimiter | Name | Purpose |
-|-----------|------|---------|
-| `----` | listing | Code/preformatted text |
-| `....` | literal | Literal text (monospace, preserved) |
-| `++++` | passthrough | Raw output (HTML, etc.) |
+| Delimiter | Name        | Purpose                             |
+| --------- | ----------- | ----------------------------------- |
+| `----`    | listing     | Code/preformatted text              |
+| `....`    | literal     | Literal text (monospace, preserved) |
+| `++++`    | passthrough | Raw output (HTML, etc.)             |
 
 ```
 ----
@@ -410,7 +412,7 @@ fn main() {
 ```
 ````
 
-These are equivalent to `[source,lang]` + `----` blocks. The parser must recognize the opening `` ``` `` (with optional language) and closing `` ``` `` as leaf block delimiters. The formatter normalizes these to AsciiDoc-native `[source,lang]` + `----` blocks.
+These are equivalent to `[source,lang]` + `----` blocks. The parser must recognize the opening ` ``` ` (with optional language) and closing ` ``` ` as leaf block delimiters. The formatter normalizes these to AsciiDoc-native `[source,lang]` + `----` blocks.
 
 Verse (`____`) is a leaf block when preceded by `[verse]` — line breaks are preserved but inline markup is still processed:
 
@@ -444,12 +446,12 @@ The parser ignores everything in here.
 
 ### Parent blocks (content IS parsed recursively as AsciiDoc)
 
-| Delimiter | Name | Purpose |
-|-----------|------|---------|
-| `====` | example | Example content |
-| `****` | sidebar | Sidebar content |
-| `____` | quote | Block quote (default, without `[verse]`) |
-| `--` | open | Generic container, can masquerade as other types |
+| Delimiter | Name    | Purpose                                          |
+| --------- | ------- | ------------------------------------------------ |
+| `====`    | example | Example content                                  |
+| `****`    | sidebar | Sidebar content                                  |
+| `____`    | quote   | Block quote (default, without `[verse]`)         |
+| `--`      | open    | Generic container, can masquerade as other types |
 
 ```
 ====
@@ -541,14 +543,14 @@ lists, and other block elements.
 
 The full masquerade table from the Asciidoctor converter:
 
-| Delimiter | Default context | Masquerade styles |
-|---|---|---|
-| `--` (open) | open | comment, example, literal, listing, pass, quote, sidebar, source, verse, admonition, abstract, partintro |
-| `----` (listing) | listing | literal, source |
-| `....` (literal) | literal | listing, source |
-| `====` (example) | example | admonition (NOTE, TIP, IMPORTANT, CAUTION, WARNING) |
-| `____` (quote) | quote | verse |
-| `++++` (pass) | pass | stem, latexmath, asciimath |
+| Delimiter        | Default context | Masquerade styles                                                                                        |
+| ---------------- | --------------- | -------------------------------------------------------------------------------------------------------- |
+| `--` (open)      | open            | comment, example, literal, listing, pass, quote, sidebar, source, verse, admonition, abstract, partintro |
+| `----` (listing) | listing         | literal, source                                                                                          |
+| `....` (literal) | literal         | listing, source                                                                                          |
+| `====` (example) | example         | admonition (NOTE, TIP, IMPORTANT, CAUTION, WARNING)                                                      |
+| `____` (quote)   | quote           | verse                                                                                                    |
+| `++++` (pass)    | pass            | stem, latexmath, asciimath                                                                               |
 
 **Impact on content model:** Masquerading changes how the block's content is parsed. A `____` block is normally a compound quote (content parsed as AsciiDoc), but with `[verse]` it becomes verbatim (line breaks preserved, no reflow). A `++++` block is normally raw passthrough, but with `[stem]` it's math notation. An `====` block with `[NOTE]` becomes an admonition container. A formatter must check the style attribute to determine the correct content model — otherwise it risks reflowing verbatim content or failing to parse compound content.
 
@@ -582,6 +584,7 @@ quality of your thoughts.
 ### Block forms
 
 The ASG schema distinguishes three forms:
+
 - **delimited**: enclosed by delimiter lines (`----` ... `----`)
 - **indented**: a literal paragraph (indented by space)
 - **paragraph**: paragraph-form (e.g., `NOTE: text` for an admonition)
@@ -615,6 +618,7 @@ The `.Title` line and `[attributes]` line must be immediately above the block wi
 ## Admonitions
 
 Paragraph form — a single paragraph prefixed by the admonition label:
+
 ```
 NOTE: This is a note.
 TIP: This is a tip.
@@ -624,6 +628,7 @@ WARNING: This is a warning.
 ```
 
 Block form — any of the five types can use an example block delimiter for multi-paragraph content:
+
 ```
 [NOTE]
 ====
@@ -637,6 +642,7 @@ Second paragraph with *formatting* and a list:
 ```
 
 Block-form admonitions can also use an open block (`--`) instead of `====`:
+
 ```
 [WARNING]
 --
@@ -728,6 +734,7 @@ The last row is treated as a footer when `%footer` or `options="footer"` is set.
 ### Merged cells
 
 Column span — `N+|` merges N columns:
+
 ```
 |===
 |A |B |C
@@ -739,6 +746,7 @@ Column span — `N+|` merges N columns:
 ```
 
 Row span — `.N+|` merges N rows:
+
 ```
 |===
 |A |B
@@ -751,6 +759,7 @@ Row span — `.N+|` merges N rows:
 ```
 
 Combined — `C.R+|` spans C columns and R rows:
+
 ```
 |===
 |A |B |C
@@ -775,6 +784,7 @@ All cell prefix components can be combined on a single cell. The full grammar in
 ```
 
 Where:
+
 - **Column span**: `N+` (merge N columns)
 - **Row span**: `.N+` (merge N rows)
 - **Horizontal alignment**: `<` (left), `^` (center), `>` (right)
@@ -795,6 +805,7 @@ The table parser must handle the full combinatorial prefix, not just individual 
 ### CSV and DSV tables
 
 CSV shorthand uses `,===` delimiters with comma-separated cells:
+
 ```
 ,===
 a,b,c
@@ -803,6 +814,7 @@ a,b,c
 ```
 
 DSV shorthand uses `:===` with colon-separated cells:
+
 ```
 :===
 root:x:0
@@ -885,11 +897,13 @@ Attribute references in text: `{attribute-name}`.
 ## Comments
 
 Line comment:
+
 ```
 // This is a comment
 ```
 
 Block comment (a delimited block using `////`):
+
 ```
 ////
 This is a
@@ -898,6 +912,7 @@ block comment.
 ```
 
 Line comments can appear between block metadata lines without breaking the attachment:
+
 ```
 // TODO: improve this example
 .Block Title
@@ -962,6 +977,7 @@ A formatter preserves these as-is.
 The ASG represents parsed documents as a tree of typed nodes. Each node has `name`, `type`, and `location`.
 
 **Block nodes** (`type: "block"`):
+
 - `document` — root
 - `section` — with `level` and `title` (array of inline nodes)
 - `paragraph` — with `inlines`
@@ -974,6 +990,7 @@ The ASG represents parsed documents as a tree of typed nodes. Each node has `nam
 - `blockMacro` (image/video/audio/toc)
 
 **Inline nodes** (`type: "inline"`):
+
 - `span` — with `variant` (strong/emphasis/code/mark) and `form` (constrained/unconstrained)
 - `ref` — with `variant` (link/xref) and `target`
 - `text` — plain text literal (`type: "string"`)
@@ -981,17 +998,20 @@ The ASG represents parsed documents as a tree of typed nodes. Each node has `nam
 - `raw` — passthrough content (`type: "string"`)
 
 **Location format:**
+
 ```json
 "location": [
   { "line": 1, "col": 1 },
   { "line": 1, "col": 16 }
 ]
 ```
+
 Line numbers are 1-based. Column numbers are 0-based in the schema (though TCK examples show 1-based — verify when implementing).
 
 ## What the ASG does NOT represent
 
 The ASG is semantic — it intentionally omits:
+
 - Comments (line and block)
 - Attribute entries (consumed into document attributes)
 - Include directives (resolved)

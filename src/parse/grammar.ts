@@ -58,7 +58,15 @@ import { LOOKAHEAD } from "../constants.js";
  */
 export class AsciidocParser extends CstParser {
   constructor() {
-    super(allTokens);
+    // recoveryEnabled activates Chevrotain's four built-in
+    // recovery strategies (token insertion, deletion,
+    // repetition re-sync, general re-sync). This lets the
+    // parser produce a partial CST even when rules fail —
+    // e.g. an unclosed delimited block missing its end
+    // delimiter. Without this, such inputs would throw a
+    // parse error, crashing the formatter instead of
+    // degrading gracefully.
+    super(allTokens, { recoveryEnabled: true });
     this.performSelfAnalysis();
   }
 
@@ -280,8 +288,16 @@ export class AsciidocParser extends CstParser {
         // indented (IndentedLine) — both are part of the same
         // list item paragraph.
         this.OR([
-          { ALT: () => { this.CONSUME2(TextContent); } },
-          { ALT: () => { this.CONSUME(IndentedLine); } },
+          {
+            ALT: () => {
+              this.CONSUME2(TextContent);
+            },
+          },
+          {
+            ALT: () => {
+              this.CONSUME(IndentedLine);
+            },
+          },
         ]);
       });
       this.OPTION(() => {

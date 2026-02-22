@@ -115,8 +115,9 @@ function joinBlocks(blocks: BlockNode[], printed: Doc[]): Doc {
     // Stacked blocks (consecutive comments, consecutive attribute
     // entries, or document title + attribute entry in a header)
     // use a single newline. All other pairs get a blank line.
-    const separator: Doc =
-      shouldStack(blocks, index) ? hardline : [hardline, hardline];
+    const separator: Doc = shouldStack(blocks, index)
+      ? hardline
+      : [hardline, hardline];
     result.push(separator, printed[index]);
   }
   return result;
@@ -138,13 +139,7 @@ function printComment(node: {
   // Block comment: delimiters on their own lines, content verbatim.
   if (node.value.length > EMPTY) {
     const contentLines = node.value.split("\n");
-    return [
-      "////",
-      hardline,
-      join(hardline, contentLines),
-      hardline,
-      "////",
-    ];
+    return ["////", hardline, join(hardline, contentLines), hardline, "////"];
   }
   return ["////", hardline, "////"];
 }
@@ -171,10 +166,7 @@ const DELIMITER_CHARS: Record<LeafBlockVariant, string> = {
 // and returns a delimiter one character longer than the
 // longest conflict. Returns the minimum 4-char delimiter
 // when no conflicts exist.
-function computeDelimiter(
-  content: string,
-  delimChar: string,
-): string {
+function computeDelimiter(content: string, delimChar: string): string {
   let maxConflict = EMPTY;
   if (content.length > EMPTY) {
     // Escape the delimiter char for use in a regex.
@@ -182,10 +174,7 @@ function computeDelimiter(
     // outside character classes and must NOT be escaped
     // (the `v` flag rejects unnecessary escapes).
     const escaped = delimChar.replace(/[.+]/v, String.raw`\$&`);
-    const pattern = new RegExp(
-      `^${escaped}{${MIN_DELIMITER_LENGTH},}$`,
-      "v",
-    );
+    const pattern = new RegExp(`^${escaped}{${MIN_DELIMITER_LENGTH},}$`, "v");
     for (const line of content.split("\n")) {
       if (pattern.test(line)) {
         maxConflict = Math.max(maxConflict, line.length);
@@ -237,10 +226,7 @@ function printDelimitedBlock(node: DelimitedBlockNode): Doc {
 
 // Maps each parent block variant to its delimiter character and
 // default length. Open blocks always use exactly 2 dashes.
-const PARENT_DELIMITER_CHARS: Record<
-  ParentBlockNode["variant"],
-  string
-> = {
+const PARENT_DELIMITER_CHARS: Record<ParentBlockNode["variant"], string> = {
   example: "=",
   sidebar: "*",
   open: "-",
@@ -311,10 +297,10 @@ function printAdmonition(
       }
       parts.push(word);
     }
-    // Indent continuation lines to align with the text after
-    // the label prefix, so wrapped lines start under the first
-    // word rather than at column 0.
-    return [label, align(label.length, fill(parts))];
+    // No align() here: leading spaces in AsciiDoc denote an
+    // indented literal block, so continuation lines must start
+    // at column 0 to preserve document semantics.
+    return [label, fill(parts)];
   }
 
   // Delimited form: use the stored delimiter variant to
@@ -385,14 +371,21 @@ function buildMarker(
   if (parentList?.variant === "callout") {
     // Auto-numbered callouts store 0 as calloutNumber.
     const calloutLabel =
-      node.calloutNumber === EMPTY
-        ? "."
-        : String(node.calloutNumber);
+      node.calloutNumber === EMPTY ? "." : String(node.calloutNumber);
     return `<${calloutLabel}>`;
   }
-  const markerChar =
-    parentList?.variant === "ordered" ? "." : "*";
+  const markerChar = parentList?.variant === "ordered" ? "." : "*";
   return markerChar.repeat(node.depth);
+}
+
+function formatCheckbox(checkbox: ListItemNode["checkbox"]): string {
+  if (checkbox === "checked") {
+    return "[x] ";
+  }
+  if (checkbox === "unchecked") {
+    return "[ ] ";
+  }
+  return "";
 }
 
 // Prints a single list item: marker + space + text content,
@@ -413,12 +406,7 @@ function printListItem(
 
   // For checklist items, insert the checkbox marker between the
   // list marker and the text. Normalize [*] to [x] (canonical).
-  const checkboxPrefix =
-    node.checkbox === "checked"
-      ? "[x] "
-      : (node.checkbox === "unchecked"
-          ? "[ ] "
-          : "");
+  const checkboxPrefix = formatCheckbox(node.checkbox);
 
   // Continuation lines should align with the text start, which
   // is marker width + 1 space after the marker character(s).
@@ -446,10 +434,7 @@ function printListItem(
         ? (printedChild as Doc[])
         : [printedChild];
       return [
-        fill([
-          marker, " ", checkboxPrefix,
-          align(markerWidth, fill(flatText)),
-        ]),
+        fill([marker, " ", checkboxPrefix, align(markerWidth, fill(flatText))]),
       ];
     }
     // Nested list: appears on the next line.

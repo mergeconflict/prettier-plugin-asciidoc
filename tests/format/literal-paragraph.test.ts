@@ -34,8 +34,7 @@ describe("literal paragraph formatting", () => {
 
   // Literal paragraph between two regular paragraphs.
   test("between paragraphs", async () => {
-    const input =
-      "Before.\n\n  indented code\n  more code\n\nAfter.\n";
+    const input = "Before.\n\n  indented code\n  more code\n\nAfter.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 });

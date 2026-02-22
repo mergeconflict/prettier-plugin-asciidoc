@@ -14,7 +14,7 @@ bun run lint           # ESLint, zero warnings policy (--max-warnings=0)
 bun test               # Vitest
 bun run build          # bun build → dist/ (ESM)
 bun run vendor         # Re-fetch ASG schema + TCK fixtures into vendor/
-bunx vitest run tests/parser/reader.test.ts  # Run a single test file
+bun vitest run tests/parser/reader.test.ts   # Run a single test file
 ```
 
 All four checks (check, lint, test, build) must pass before considering work done.
@@ -36,6 +36,7 @@ source text → Lexer → Parser → CST → AST Builder → AST → Printer →
 ## Lint rules to know about
 
 ESLint is strict. Key rules that affect how you write code:
+
 - No `any` — use proper types
 - No `null` — use `undefined` (relaxed in test files)
 - `strict-boolean-expressions` — no truthy/falsy checks, be explicit
@@ -46,9 +47,10 @@ ESLint is strict. Key rules that affect how you write code:
 
 ## Code comments
 
-All non-trivial code should have comments that explain *why* it exists, not just what it does. Restate the code's purpose only when the intent isn't obvious from reading it.
+All non-trivial code should have comments that explain _why_ it exists, not just what it does. Restate the code's purpose only when the intent isn't obvious from reading it.
 
 **Style convention:**
+
 - `/** */` JSDoc — exported/public API surfaces (interfaces, exported types, module-level file docs). VS Code shows these on hover.
 - `//` — internal implementation notes (helper functions, grammar rules, token definitions, "why" explanations).
 
@@ -61,8 +63,9 @@ All non-trivial code should have comments that explain *why* it exists, not just
 ## Version control
 
 This project uses jj (Jujutsu), not git:
+
 - `jj st` — status
 - `jj diff --git` — show changes
-- `jj describe -m "message"` — set commit message
+- `jj describe -m "message"` — set commit message (the `-m` is necessary to avoid running an interactive editor)
 - `jj new` — create new change
 - `jj log` — history

@@ -56,7 +56,8 @@ describe("block attribute list formatting", () => {
   // Attribute list between paragraphs should get blank-line
   // treatment: one blank line between each.
   test("attribute list between paragraphs", async () => {
-    const input = "Before.\n\n[source,ruby]\n----\nputs 'hello'\n----\n\nAfter.\n";
+    const input =
+      "Before.\n\n[source,ruby]\n----\nputs 'hello'\n----\n\nAfter.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 });
@@ -139,8 +140,7 @@ describe("combined block metadata formatting", () => {
 
   // Block metadata after a paragraph gets blank-line separation.
   test("paragraph then metadata then block", async () => {
-    const input =
-      "Some text.\n\n[source,ruby]\n----\nputs 'hello'\n----\n";
+    const input = "Some text.\n\n[source,ruby]\n----\nputs 'hello'\n----\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 });

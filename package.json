@@ -17,7 +17,10 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "check": "tsc --noEmit",
-    "vendor": "bash scripts/vendor.sh"
+    "vendor": "bash scripts/vendor.sh",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "fuzz": "FUZZ=1 vitest run tests/parser/fuzz.test.ts tests/format/fuzz.test.ts"
   },
   "peerDependencies": {
     "prettier": "^3.0.0"
@@ -28,6 +31,7 @@
     "eslint": "^10.0.1",
     "eslint-config-love": "^151.0.0",
     "eslint-plugin-unicorn": "^63.0.0",
+    "fast-check": "^4.5.3",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.0",

@@ -23,15 +23,13 @@ describe("example block formatting", () => {
 
   // Multiple inner paragraphs separated by blank lines.
   test("multiple inner paragraphs", async () => {
-    const input =
-      "====\nFirst paragraph.\n\nSecond paragraph.\n====\n";
+    const input = "====\nFirst paragraph.\n\nSecond paragraph.\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   // Example block between paragraphs.
   test("between paragraphs", async () => {
-    const input =
-      "Before.\n\n====\nInside.\n====\n\nAfter.\n";
+    const input = "Before.\n\n====\nInside.\n====\n\nAfter.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
@@ -133,15 +131,13 @@ describe("nested parent block formatting", () => {
   // Example inside sidebar — no blank lines between delimiter
   // and content; the delimiter is framing, not a block separator.
   test("example inside sidebar", async () => {
-    const input =
-      "****\n====\nNested content.\n====\n****\n";
+    const input = "****\n====\nNested content.\n====\n****\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   // Listing block (leaf) inside example block.
   test("leaf block inside parent block", async () => {
-    const input =
-      "====\n----\ncode\n----\n====\n";
+    const input = "====\n----\ncode\n----\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 });

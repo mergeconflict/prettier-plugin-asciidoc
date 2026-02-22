@@ -27,24 +27,18 @@ describe("literal paragraph parsing", () => {
   // Multiple consecutive indented lines form a single literal
   // paragraph. Each line's indentation is preserved.
   test("multiple consecutive indented lines", () => {
-    const { children } = parse(
-      " line one\n line two\n line three\n",
-    );
+    const { children } = parse(" line one\n line two\n line three\n");
     expect(children).toHaveLength(1);
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("literal");
     expect(block.form).toBe("indented");
-    expect(block.content).toBe(
-      " line one\n line two\n line three",
-    );
+    expect(block.content).toBe(" line one\n line two\n line three");
   });
 
   // A blank line ends the literal paragraph — subsequent
   // non-indented text becomes a regular paragraph.
   test("blank line ends literal paragraph", () => {
-    const { children } = parse(
-      " indented\n\nregular paragraph\n",
-    );
+    const { children } = parse(" indented\n\nregular paragraph\n");
     expect(children).toHaveLength(2);
     expect(children[0].type).toBe("delimitedBlock");
     expect(children[1].type).toBe("paragraph");
@@ -55,21 +49,15 @@ describe("literal paragraph parsing", () => {
   // Varying indentation depths within one literal paragraph
   // are preserved.
   test("varying indentation preserved", () => {
-    const { children } = parse(
-      "  two spaces\n    four spaces\n one space\n",
-    );
+    const { children } = parse("  two spaces\n    four spaces\n one space\n");
     expect(children).toHaveLength(1);
     const block = firstDelimitedBlock(children);
-    expect(block.content).toBe(
-      "  two spaces\n    four spaces\n one space",
-    );
+    expect(block.content).toBe("  two spaces\n    four spaces\n one space");
   });
 
   // A literal paragraph between two regular paragraphs.
   test("between regular paragraphs", () => {
-    const { children } = parse(
-      "Before.\n\n  indented\n\nAfter.\n",
-    );
+    const { children } = parse("Before.\n\n  indented\n\nAfter.\n");
     expect(children).toHaveLength(3);
     expect(children[0].type).toBe("paragraph");
     expect(children[1].type).toBe("delimitedBlock");

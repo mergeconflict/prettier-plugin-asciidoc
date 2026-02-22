@@ -47,8 +47,7 @@ describe("unordered list formatting", () => {
 
   // All 5 nesting levels preserved through formatting.
   test("five-level nesting preserved", async () => {
-    const input =
-      "* L1\n** L2\n*** L3\n**** L4\n***** L5\n";
+    const input = "* L1\n** L2\n*** L3\n**** L4\n***** L5\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
@@ -66,8 +65,7 @@ describe("unordered list formatting", () => {
 
   // Multi-level collapse: depth 3 back to depth 1 in one step.
   test("return to root after deep nesting", async () => {
-    const input =
-      "* First\n** Nested\n*** Deep\n* Second\n";
+    const input = "* First\n** Nested\n*** Deep\n* Second\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
@@ -133,19 +131,15 @@ describe("unordered list formatting", () => {
   // Short indented continuation lines are reflowed into one
   // line when they fit within print width.
   test("short indented continuation is reflowed", async () => {
-    const input =
-      "* First line\n  continuation line\n";
-    const expected =
-      "* First line continuation line\n";
+    const input = "* First line\n  continuation line\n";
+    const expected = "* First line continuation line\n";
     expect(await formatAdoc(input)).toBe(expected);
   });
 
   // Short flush continuation lines are reflowed into one line.
   test("short flush continuation is reflowed", async () => {
-    const input =
-      "* First line\ncontinuation line\n";
-    const expected =
-      "* First line continuation line\n";
+    const input = "* First line\ncontinuation line\n";
+    const expected = "* First line continuation line\n";
     expect(await formatAdoc(input)).toBe(expected);
   });
 

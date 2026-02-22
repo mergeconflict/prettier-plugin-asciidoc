@@ -87,7 +87,9 @@ describe("block attribute list parsing", () => {
 
   // Multiple attribute lines stacked before a block.
   test("multiple attribute lines stacked before a block", () => {
-    const document = parse("[source,ruby]\n[#myid]\n----\nputs 'hello'\n----\n");
+    const document = parse(
+      "[source,ruby]\n[#myid]\n----\nputs 'hello'\n----\n",
+    );
     expect(document.children).toHaveLength(3);
     expect(document.children[0].type).toBe("blockAttributeList");
     expect(document.children[1].type).toBe("blockAttributeList");
@@ -102,9 +104,7 @@ describe("block attribute list parsing", () => {
     expect(document.children[0].position.start.column).toBe(1);
     // "[source,ruby]" is 13 chars; end offset is exclusive
     const EXPECTED_END_OFFSET = 13;
-    expect(document.children[0].position.end.offset).toBe(
-      EXPECTED_END_OFFSET,
-    );
+    expect(document.children[0].position.end.offset).toBe(EXPECTED_END_OFFSET);
   });
 
   // Empty attribute list: [] should parse correctly.
@@ -158,9 +158,7 @@ describe("block anchor parsing", () => {
     expect(document.children[0].position.start.column).toBe(1);
     // "[[my-id]]" is 9 chars; end offset is exclusive
     const EXPECTED_END_OFFSET = 9;
-    expect(document.children[0].position.end.offset).toBe(
-      EXPECTED_END_OFFSET,
-    );
+    expect(document.children[0].position.end.offset).toBe(EXPECTED_END_OFFSET);
   });
 });
 
@@ -226,9 +224,7 @@ describe("block title parsing", () => {
     expect(document.children[0].position.start.column).toBe(1);
     // ".My Title" is 9 chars; end offset is exclusive
     const EXPECTED_END_OFFSET = 9;
-    expect(document.children[0].position.end.offset).toBe(
-      EXPECTED_END_OFFSET,
-    );
+    expect(document.children[0].position.end.offset).toBe(EXPECTED_END_OFFSET);
   });
 
   // Block title with special characters in the text.

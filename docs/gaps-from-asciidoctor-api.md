@@ -13,57 +13,57 @@ context.
 
 ## Block contexts (29 in Asciidoctor)
 
-| Context | Status | Plan task |
-|---|---|---|
-| `document` | Done | — |
-| `section` | Done | — |
-| `preamble` | Implicit (no dedicated node, not needed) | — |
-| `floating_title` | Done (discreteHeading) | — |
-| `paragraph` | Done | — |
-| `listing` | Done (delimitedBlock) | — |
-| `literal` | Done (delimitedBlock) | — |
-| `pass` | Done (delimitedBlock) | — |
-| `example` | Done (parentBlock) | — |
-| `quote` | Done (parentBlock) | — |
-| `sidebar` | Done (parentBlock) | — |
-| `open` | Done (parentBlock) | — |
-| `ulist` | Done | — |
-| `olist` | Done | — |
-| `colist` | Done | — |
-| `admonition` | Done (paragraph-form) | Task 13b |
-| `comment` | Done | — |
-| `thematic_break` | Done | — |
-| `page_break` | Done | — |
-| `table` | Not done | Task 18 |
-| `dlist` | Not done | Task 17 |
-| `image` (block macro) | Not done | Task 19 |
-| `video` (block macro) | Not done | Task 19 |
-| `audio` (block macro) | Not done | Task 19 |
-| `toc` (block macro) | Not done | Task 19 |
-| `stem` | **Not done, NOT IN PLAN** | — |
-| `verse` (delimited) | **Partial, NOT IN PLAN** | — |
-| `fenced_code` | **Not done, NOT IN PLAN** | — |
-| `embedded` | N/A (pseudo-context for headerless rendering) | — |
+| Context               | Status                                        | Plan task |
+| --------------------- | --------------------------------------------- | --------- |
+| `document`            | Done                                          | —         |
+| `section`             | Done                                          | —         |
+| `preamble`            | Implicit (no dedicated node, not needed)      | —         |
+| `floating_title`      | Done (discreteHeading)                        | —         |
+| `paragraph`           | Done                                          | —         |
+| `listing`             | Done (delimitedBlock)                         | —         |
+| `literal`             | Done (delimitedBlock)                         | —         |
+| `pass`                | Done (delimitedBlock)                         | —         |
+| `example`             | Done (parentBlock)                            | —         |
+| `quote`               | Done (parentBlock)                            | —         |
+| `sidebar`             | Done (parentBlock)                            | —         |
+| `open`                | Done (parentBlock)                            | —         |
+| `ulist`               | Done                                          | —         |
+| `olist`               | Done                                          | —         |
+| `colist`              | Done                                          | —         |
+| `admonition`          | Done (paragraph-form)                         | Task 13b  |
+| `comment`             | Done                                          | —         |
+| `thematic_break`      | Done                                          | —         |
+| `page_break`          | Done                                          | —         |
+| `table`               | Not done                                      | Task 18   |
+| `dlist`               | Not done                                      | Task 17   |
+| `image` (block macro) | Not done                                      | Task 19   |
+| `video` (block macro) | Not done                                      | Task 19   |
+| `audio` (block macro) | Not done                                      | Task 19   |
+| `toc` (block macro)   | Not done                                      | Task 19   |
+| `stem`                | **Not done, NOT IN PLAN**                     | —         |
+| `verse` (delimited)   | **Partial, NOT IN PLAN**                      | —         |
+| `fenced_code`         | **Not done, NOT IN PLAN**                     | —         |
+| `embedded`            | N/A (pseudo-context for headerless rendering) | —         |
 
 ## Inline contexts (10 contexts, 35 subtypes in Asciidoctor)
 
-| Context | Subtypes | Plan task | Gap? |
-|---|---|---|---|
-| `inline_quoted` | strong, emphasis, monospaced, mark | Task 14 | — |
-| `inline_quoted` | superscript, subscript | Task 24 | — |
-| `inline_quoted` | double, single (curly quotes) | Task 24 | — |
-| `inline_quoted` | asciimath, latexmath | — | **Not in plan** |
-| `inline_quoted` | unquoted (bare role/id) | — | Edge case |
-| `inline_anchor` | link, xref, ref, bibref | Task 15 | — |
-| `inline_image` | default | Task 16 | — |
-| `inline_image` | icon (`icon:name[]`) | — | **Not in plan** |
-| `inline_footnote` | definition, xref | Task 16 | — |
-| `inline_indexterm` | hidden, visible | Task 24b | — |
-| `inline_kbd` | — | Task 16 | — |
-| `inline_button` | — | Task 16 | — |
-| `inline_menu` | — | Task 16 | — |
-| `inline_callout` | — | — | **Not in plan** |
-| `inline_break` | — | Task 16 | — |
+| Context            | Subtypes                           | Plan task | Gap?            |
+| ------------------ | ---------------------------------- | --------- | --------------- |
+| `inline_quoted`    | strong, emphasis, monospaced, mark | Task 14   | —               |
+| `inline_quoted`    | superscript, subscript             | Task 24   | —               |
+| `inline_quoted`    | double, single (curly quotes)      | Task 24   | —               |
+| `inline_quoted`    | asciimath, latexmath               | —         | **Not in plan** |
+| `inline_quoted`    | unquoted (bare role/id)            | —         | Edge case       |
+| `inline_anchor`    | link, xref, ref, bibref            | Task 15   | —               |
+| `inline_image`     | default                            | Task 16   | —               |
+| `inline_image`     | icon (`icon:name[]`)               | —         | **Not in plan** |
+| `inline_footnote`  | definition, xref                   | Task 16   | —               |
+| `inline_indexterm` | hidden, visible                    | Task 24b  | —               |
+| `inline_kbd`       | —                                  | Task 16   | —               |
+| `inline_button`    | —                                  | Task 16   | —               |
+| `inline_menu`      | —                                  | Task 16   | —               |
+| `inline_callout`   | —                                  | —         | **Not in plan** |
+| `inline_break`     | —                                  | Task 16   | —               |
 
 ## Relevance to a Prettier plugin
 
@@ -89,14 +89,14 @@ reflowed if unrecognized — real breakage. Found in the RFD corpus
 
 The full masquerade table from the Asciidoctor converter:
 
-| Delimiter | Default context | Masquerade styles |
-|---|---|---|
-| `--` (open) | open | comment, example, literal, listing, pass, quote, sidebar, source, verse, admonition, abstract, partintro |
-| `----` (listing) | listing | literal, source |
-| `....` (literal) | literal | listing, source |
-| `====` (example) | example | admonition |
-| `____` (quote) | quote | verse |
-| `++++` (pass) | pass | stem, latexmath, asciimath |
+| Delimiter        | Default context | Masquerade styles                                                                                        |
+| ---------------- | --------------- | -------------------------------------------------------------------------------------------------------- |
+| `--` (open)      | open            | comment, example, literal, listing, pass, quote, sidebar, source, verse, admonition, abstract, partintro |
+| `----` (listing) | listing         | literal, source                                                                                          |
+| `....` (literal) | literal         | listing, source                                                                                          |
+| `====` (example) | example         | admonition                                                                                               |
+| `____` (quote)   | quote           | verse                                                                                                    |
+| `++++` (pass)    | pass            | stem, latexmath, asciimath                                                                               |
 
 ### Already covered by existing plan tasks
 
@@ -156,13 +156,13 @@ AbstractNode
 
 ### Content models
 
-| Model | Meaning |
-|---|---|
-| compound | Contains child blocks |
-| simple | Contains inline text with substitutions |
-| verbatim | Contains preformatted text |
-| raw | Contains raw text (no processing) |
-| empty | Contains no content |
+| Model    | Meaning                                 |
+| -------- | --------------------------------------- |
+| compound | Contains child blocks                   |
+| simple   | Contains inline text with substitutions |
+| verbatim | Contains preformatted text              |
+| raw      | Contains raw text (no processing)       |
+| empty    | Contains no content                     |
 
 ### Inline quoted subtypes (QUOTE_TAGS)
 

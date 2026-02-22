@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/class-methods-use-this -- Chevrotain visitor dispatch */
+
 /**
  * CST-to-AST visitor for AsciiDoc.
  *
@@ -32,19 +34,28 @@ import {
   parseCheckbox,
   buildDelimitedBlock,
   buildParentBlock,
-  extractBlockCommentContent,
   buildBaseFlatItem,
   mergeTextTokens,
   findSubrule,
+  buildRecoveredListItem,
+  buildBlockComment,
+  buildAdmonitionParagraph,
+  buildRecoveredAttributeEntry,
+  parseUnsetForm,
 } from "./block-helpers.js";
 import { nestSections } from "./section-builder.js";
 import { convertParagraphFormBlocks } from "./paragraph-form.js";
 import { convertDiscreteHeadings } from "./discrete-heading.js";
-import { EMPTY, FIRST, LAST_ELEMENT } from "../constants.js";
-import { buildTokenBlock } from "./token-builders.js";
 import {
+  EMPTY,
+  FIRST,
   FIRST_COLUMN,
   FIRST_LINE,
+  LAST_ELEMENT,
+} from "../constants.js";
+import { unreachable } from "../unreachable.js";
+import { buildTokenBlock } from "./token-builders.js";
+import {
   makeLocation,
   tokenStartLocation,
   tokenEndLocation,
@@ -93,7 +104,6 @@ const ATTRIBUTE_ENTRY_RE =
 
 // getBaseCstVisitorConstructorWithDefaults generates a base class with no-op
 // methods for every grammar rule, so we only override the rules we need.
-
 const BaseCstVisitor = asciidocParser.getBaseCstVisitorConstructorWithDefaults<
   string,
   unknown
@@ -105,9 +115,6 @@ const BaseCstVisitor = asciidocParser.getBaseCstVisitorConstructorWithDefaults<
  * and visitor methods at construction time rather than at
  * first parse, so typos surface immediately.
  */
-// Chevrotain dispatches visitor methods via `this` — they don't
-// reference instance state directly, which triggers this rule.
-/* eslint-disable @typescript-eslint/class-methods-use-this -- Chevrotain visitor dispatch */
 export class AstBuilder extends BaseCstVisitor {
   constructor() {
     super();
@@ -140,8 +147,7 @@ export class AstBuilder extends BaseCstVisitor {
 
     // Convert [discrete] + section pairs to DiscreteHeadingNode
     // before nesting, so they aren't used as nesting targets.
-    const withDiscreteHeadings =
-      convertDiscreteHeadings(withParagraphForms);
+    const withDiscreteHeadings = convertDiscreteHeadings(withParagraphForms);
     const children = nestSections(withDiscreteHeadings);
 
     return {
@@ -170,9 +176,17 @@ export class AstBuilder extends BaseCstVisitor {
     // paragraphs) are delegated to their visitor methods.
     const subrule = findSubrule(context);
     if (subrule === undefined) {
-      throw new Error(
-        "Block must contain a section, comment, attribute entry, list, or paragraph",
-      );
+      // Recovery produced an empty block CST node. Return
+      // a zero-width paragraph so the document structure is
+      // preserved without crashing.
+      return {
+        type: "paragraph",
+        children: [],
+        position: {
+          start: makeLocation(FIRST, FIRST_LINE, FIRST_COLUMN),
+          end: computeEnd(sourceText),
+        },
+      };
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Chevrotain visitor returns unknown
     return this.visit(subrule, sourceText) as BlockNode;
@@ -226,9 +240,9 @@ export class AstBuilder extends BaseCstVisitor {
   listItem(context: ListItemCstChildren): FlatListItem {
     const markerToken = context.UnorderedListMarker?.[FIRST];
     if (markerToken === undefined) {
-      throw new Error(
-        "List item must contain an UnorderedListMarker token",
-      );
+      // Recovery entered the rule without a marker token.
+      // Build a stub item from whatever text is available.
+      return buildRecoveredListItem(context.TextContent ?? []);
     }
 
     // The marker image is `*{1,5} ` or `- `. For `*`-style markers,
@@ -243,30 +257,29 @@ export class AstBuilder extends BaseCstVisitor {
       context.TextContent ?? [],
       context.IndentedLine ?? [],
     );
-    const rawValue = allTokens
-      .map((t) => t.image.trimStart())
-      .join("\n");
+    const rawValue = allTokens.map((t) => t.image.trimStart()).join("\n");
 
     // Detect checklist markers: [x], [*], or [ ] followed by a
     // space at the start of the item text.
-    const { checkbox, value, prefixLength } =
-      parseCheckbox(rawValue);
+    const { checkbox, value, prefixLength } = parseCheckbox(rawValue);
 
     const lastToken = allTokens.at(LAST_ELEMENT) ?? markerToken;
 
     // When a checkbox prefix is present, shift textStart forward
     // by the prefix length so the position tracks the actual
     // content text, not the checkbox marker.
-    const baseTextStart = allTokens.length > EMPTY
-      ? tokenStartLocation(allTokens[FIRST])
-      : tokenStartLocation(markerToken);
-    const textStart = prefixLength > EMPTY
-      ? makeLocation(
-          baseTextStart.offset + prefixLength,
-          baseTextStart.line,
-          baseTextStart.column + prefixLength,
-        )
-      : baseTextStart;
+    const baseTextStart =
+      allTokens.length > EMPTY
+        ? tokenStartLocation(allTokens[FIRST])
+        : tokenStartLocation(markerToken);
+    const textStart =
+      prefixLength > EMPTY
+        ? makeLocation(
+            baseTextStart.offset + prefixLength,
+            baseTextStart.line,
+            baseTextStart.column + prefixLength,
+          )
+        : baseTextStart;
 
     return {
       depth,
@@ -292,23 +305,19 @@ export class AstBuilder extends BaseCstVisitor {
   }
 
   /** Extracts flat ordered list item (depth, text, position). */
-  orderedListItem(
-    context: OrderedListItemCstChildren,
-  ): FlatListItem {
+  orderedListItem(context: OrderedListItemCstChildren): FlatListItem {
     const markerToken = context.OrderedListMarker?.[FIRST];
     if (markerToken === undefined) {
-      throw new Error(
-        "Ordered list item must contain an OrderedListMarker token",
-      );
+      // Recovery entered the rule without a marker token.
+      return buildRecoveredListItem(context.TextContent ?? []);
     }
 
     // The marker image is `.{1,5} ` — depth is the number of
     // dots (image length minus the trailing space).
     const depth = markerToken.image.length - TRAILING_SPACE_LEN;
-    return buildBaseFlatItem(
-      markerToken, context.TextContent ?? [], depth,
-      { indentedTokens: context.IndentedLine ?? [] },
-    );
+    return buildBaseFlatItem(markerToken, context.TextContent ?? [], depth, {
+      indentedTokens: context.IndentedLine ?? [],
+    });
   }
 
   // Builds a flat callout list (callouts don't nest).
@@ -323,22 +332,17 @@ export class AstBuilder extends BaseCstVisitor {
   }
 
   /** Extracts flat callout item (callout number, text, position). */
-  calloutListItem(
-    context: CalloutListItemCstChildren,
-  ): FlatListItem {
+  calloutListItem(context: CalloutListItemCstChildren): FlatListItem {
     const markerToken = context.CalloutListMarker?.[FIRST];
     if (markerToken === undefined) {
-      throw new Error(
-        "Callout list item must contain a CalloutListMarker token",
-      );
+      // Recovery entered the rule without a marker token.
+      return buildRecoveredListItem(context.TextContent ?? []);
     }
 
     // Extract callout number: "<1> " → 1, "<.> " → 0 (auto).
-    const innerMatch =
-      CALLOUT_NUMBER_RE.exec(markerToken.image);
+    const innerMatch = CALLOUT_NUMBER_RE.exec(markerToken.image);
     const inner = innerMatch?.groups?.inner ?? ".";
-    const calloutNumber =
-      inner === "." ? EMPTY : Number.parseInt(inner, 10);
+    const calloutNumber = inner === "." ? EMPTY : Number.parseInt(inner, 10);
 
     return buildBaseFlatItem(
       markerToken,
@@ -356,30 +360,14 @@ export class AstBuilder extends BaseCstVisitor {
     context: BlockCommentCstChildren,
     sourceText: string,
   ): CommentNode {
-    const delimiterToken = context.BlockCommentDelimiter?.[FIRST];
-    const endToken = context.BlockCommentEnd?.[FIRST];
-    if (delimiterToken === undefined || endToken === undefined) {
-      throw new Error(
-        "Block comment must have opening and closing delimiters",
-      );
-    }
-
-    // Extract verbatim content directly from the source text.
-    // Token-based reconstruction would lose blank lines inside the
-    // comment because the CST groups tokens by type, not position.
-    const value = extractBlockCommentContent(
-      delimiterToken, endToken, sourceText,
+    const delimiterToken =
+      context.BlockCommentDelimiter?.[FIRST] ??
+      unreachable("Block comment must have an opening delimiter");
+    return buildBlockComment(
+      delimiterToken,
+      context.BlockCommentEnd?.[FIRST],
+      sourceText,
     );
-
-    return {
-      type: "comment",
-      commentType: "block",
-      value,
-      position: {
-        start: tokenStartLocation(delimiterToken),
-        end: tokenEndLocation(endToken),
-      },
-    };
   }
 
   /** Builds a listing block from its delimiters and source text. */
@@ -436,6 +424,7 @@ export class AstBuilder extends BaseCstVisitor {
       context.ExampleBlockDelimiter,
       "example",
       children,
+      sourceText,
     );
   }
 
@@ -455,6 +444,7 @@ export class AstBuilder extends BaseCstVisitor {
       context.SidebarBlockDelimiter,
       "sidebar",
       children,
+      sourceText,
     );
   }
 
@@ -474,6 +464,7 @@ export class AstBuilder extends BaseCstVisitor {
       context.OpenBlockDelimiter,
       "open",
       children,
+      sourceText,
     );
   }
 
@@ -493,6 +484,7 @@ export class AstBuilder extends BaseCstVisitor {
       context.QuoteBlockDelimiter,
       "quote",
       children,
+      sourceText,
     );
   }
 
@@ -501,13 +493,9 @@ export class AstBuilder extends BaseCstVisitor {
    * Each IndentedLine token preserves its leading spaces; we
    * join them with newlines to form the verbatim content.
    */
-  literalParagraph(
-    context: LiteralParagraphCstChildren,
-  ): DelimitedBlockNode {
+  literalParagraph(context: LiteralParagraphCstChildren): DelimitedBlockNode {
     const lineTokens = context.IndentedLine ?? [];
-    const content = lineTokens
-      .map((t) => t.image)
-      .join("\n");
+    const content = lineTokens.map((t) => t.image).join("\n");
 
     const [firstToken] = lineTokens;
     const lastToken = lineTokens.at(LAST_ELEMENT) ?? firstToken;
@@ -530,79 +518,35 @@ export class AstBuilder extends BaseCstVisitor {
    * trailing colon-space to get the variant name. Text content
    * tokens (if any) are joined with newlines for reflow.
    */
-  admonitionParagraph(
-    context: AdmonitionParagraphCstChildren,
-  ): AdmonitionNode {
-    const markerToken = context.AdmonitionMarker?.[FIRST];
-    if (markerToken === undefined) {
-      throw new Error("AdmonitionParagraph must have a marker");
-    }
-
-    // "NOTE: " → "note", "WARNING: " → "warning"
-    const COLON_SPACE_LEN = 2;
-    const variant = markerToken.image
-      .slice(EMPTY, -COLON_SPACE_LEN)
-      .toLowerCase();
-
-    const textTokens = context.TextContent ?? [];
-    const content =
-      textTokens.length > EMPTY
-        ? textTokens.map((t) => t.image).join("\n")
-        : undefined;
-
-    const lastTextToken = textTokens.at(LAST_ELEMENT);
-    const endToken = lastTextToken ?? markerToken;
-
-    return {
-      type: "admonition",
-      variant,
-      form: "paragraph",
-      delimiter: undefined,
-      content,
-      children: [],
-      position: {
-        start: tokenStartLocation(markerToken),
-        end: tokenEndLocation(endToken),
-      },
-    };
+  admonitionParagraph(context: AdmonitionParagraphCstChildren): AdmonitionNode {
+    return buildAdmonitionParagraph(
+      context.AdmonitionMarker?.[FIRST],
+      context.TextContent ?? [],
+    );
   }
 
   /** Parses attribute entry: name, optional value, unset form. */
-  attributeEntry(
-    context: AttributeEntryCstChildren,
-  ): AttributeEntryNode {
+  attributeEntry(context: AttributeEntryCstChildren): AttributeEntryNode {
     const token = context.AttributeEntry?.[FIRST];
-    if (token === undefined) {
-      throw new Error("Attribute entry must contain an AttributeEntry token");
+    const groups =
+      token === undefined
+        ? undefined
+        : ATTRIBUTE_ENTRY_RE.exec(token.image)?.groups;
+    // Recovery: missing token or unparseable phantom token.
+    if (token === undefined || groups === undefined) {
+      return buildRecoveredAttributeEntry(token);
     }
-
-    const match = ATTRIBUTE_ENTRY_RE.exec(token.image);
-    if (match?.groups === undefined) {
-      throw new Error(`Invalid attribute entry: ${token.image}`);
-    }
-
-    const { groups } = match;
     const { prefixBang, name, suffixBang } = groups;
-    // Track which unset form was used so the printer can reproduce
-    // the original syntax. `false` means "not unset".
-    let unset: false | "prefix" | "suffix" = false;
-    if (prefixBang === "!") {
-      unset = "prefix";
-    } else if (suffixBang === "!") {
-      unset = "suffix";
-    }
-    // Extract and trim the optional value. TypeScript types regex
-    // groups as `string`, but unmatched optional groups are actually
-    // `undefined` at runtime, so we widen the type with `as`.
+    const unset = parseUnsetForm(prefixBang, suffixBang);
+    // TypeScript types regex groups as `string`, but unmatched
+    // optional groups are `undefined` at runtime.
     const rawValue = groups.value as string | undefined;
     const trimmed = rawValue?.trim();
-
     return {
       type: "attributeEntry",
       name,
-      value: trimmed === undefined || trimmed.length === EMPTY
-        ? undefined
-        : trimmed,
+      value:
+        trimmed === undefined || trimmed.length === EMPTY ? undefined : trimmed,
       unset,
       position: {
         start: tokenStartLocation(token),
@@ -611,4 +555,3 @@ export class AstBuilder extends BaseCstVisitor {
     };
   }
 }
-/* eslint-enable @typescript-eslint/class-methods-use-this */

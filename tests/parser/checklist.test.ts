@@ -8,9 +8,7 @@ describe("checklist parsing", () => {
     const { children } = parse("* [x] Done\n");
     const list = firstList(children);
     expect(list.children[0].checkbox).toBe("checked");
-    const textNode = list.children[0].children.find(
-      (c) => c.type === "text",
-    );
+    const textNode = list.children[0].children.find((c) => c.type === "text");
     if (textNode?.type !== "text") throw new Error("Expected text node");
     expect(textNode.value).toBe("Done");
   });
@@ -39,9 +37,7 @@ describe("checklist parsing", () => {
 
   // A list can mix checklist and non-checklist items.
   test("mixed checklist and normal items", () => {
-    const { children } = parse(
-      "* [x] Done\n* Normal\n* [ ] Todo\n",
-    );
+    const { children } = parse("* [x] Done\n* Normal\n* [ ] Todo\n");
     const list = firstList(children);
     expect(list.children[0].checkbox).toBe("checked");
     expect(list.children[1].checkbox).toBeUndefined();
@@ -52,9 +48,7 @@ describe("checklist parsing", () => {
   test("checkbox text excludes marker", () => {
     const { children } = parse("* [x] Task text here\n");
     const list = firstList(children);
-    const textNode = list.children[0].children.find(
-      (c) => c.type === "text",
-    );
+    const textNode = list.children[0].children.find((c) => c.type === "text");
     if (textNode?.type !== "text") throw new Error("Expected text");
     expect(textNode.value).toBe("Task text here");
   });
@@ -64,9 +58,7 @@ describe("checklist parsing", () => {
     const { children } = parse("* [x] Parent\n** [ ] Child\n");
     const list = firstList(children);
     expect(list.children[0].checkbox).toBe("checked");
-    const nested = list.children[0].children.find(
-      (c) => c.type === "list",
-    );
+    const nested = list.children[0].children.find((c) => c.type === "list");
     if (nested?.type !== "list") {
       throw new Error("Expected nested list");
     }

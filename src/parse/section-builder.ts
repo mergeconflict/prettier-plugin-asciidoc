@@ -14,10 +14,7 @@ import { EMPTY, LAST_ELEMENT } from "../constants.js";
 // child of the new stack top (if one exists) or into the document's
 // top-level children. Extracted to avoid duplicating the pop-and-place
 // logic in the loop body and the drain phase of nestSections.
-function popSection(
-  stack: SectionNode[],
-  children: BlockNode[],
-): void {
+function popSection(stack: SectionNode[], children: BlockNode[]): void {
   const finished = stack.pop();
   if (finished === undefined) {
     return;

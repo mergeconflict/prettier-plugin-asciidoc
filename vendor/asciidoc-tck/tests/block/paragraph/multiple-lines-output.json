@@ -10,11 +10,20 @@
           "name": "text",
           "type": "string",
           "value": "This paragraph has multiple lines that wrap after reaching the 72\ncharacter limit set by the text editor.",
-          "location": [{ "line": 1, "col": 1 }, { "line": 2, "col": 39 }]
+          "location": [
+            { "line": 1, "col": 1 },
+            { "line": 2, "col": 39 }
+          ]
         }
       ],
-      "location": [{ "line": 1, "col": 1 }, { "line": 2, "col": 39 }]
+      "location": [
+        { "line": 1, "col": 1 },
+        { "line": 2, "col": 39 }
+      ]
     }
   ],
-  "location": [{ "line": 1, "col": 1 }, { "line": 2, "col": 39 }]
+  "location": [
+    { "line": 1, "col": 1 },
+    { "line": 2, "col": 39 }
+  ]
 }

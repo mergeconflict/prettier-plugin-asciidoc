@@ -54,6 +54,7 @@ Prettier's plugin API is AST-agnostic: it calls `parse()` to get a tree, `locSta
 Our AST is designed for Prettier, not for the AsciiDoc ASG spec. It preserves everything a formatter needs, including constructs the ASG intentionally discards.
 
 **Block nodes:**
+
 - `document` — root, contains header blocks + body blocks
 - `documentTitle` — the `= Title` line
 - `attributeEntry` — `:key: value` lines
@@ -62,13 +63,14 @@ Our AST is designed for Prettier, not for the AsciiDoc ASG spec. It preserves ev
 - `list` — ordered, unordered, callout, description
 - `listItem` — marker + text + optional nested blocks
 - `dlistItem` — term + description
-- `listingBlock`, `literalBlock`, `passBlock`, `stemBlock`, `verseBlock` — leaf blocks (delimited, indented, or paragraph form). Backtick-fenced code blocks (`` ``` ``) are parsed as `listingBlock` and normalized to `----` in output.
+- `listingBlock`, `literalBlock`, `passBlock`, `stemBlock`, `verseBlock` — leaf blocks (delimited, indented, or paragraph form). Backtick-fenced code blocks (` ``` `) are parsed as `listingBlock` and normalized to `----` in output.
 - `admonitionBlock`, `exampleBlock`, `sidebarBlock`, `openBlock`, `quoteBlock` — parent blocks. Admonitions include both the 5 standard types and arbitrary custom styles (e.g., `[EXERCISE]`).
 - `blockMacro` — image, video, audio, toc
 - `table` — rows, cells, column specs
 - `thematicBreak`, `pageBreak`
 
 **Formatter-specific nodes (not in ASG):**
+
 - `comment` — line (`//`) and block (`////`)
 - `includeDirective` — `include::path[]`
 - `conditionalDirective` — `ifdef`, `ifndef`, `ifeval`, `endif`
@@ -76,6 +78,7 @@ Our AST is designed for Prettier, not for the AsciiDoc ASG spec. It preserves ev
 - `blockAttributeList` — `[source,ruby]`, `[#id.role%option]`
 
 **Inline nodes:**
+
 - `text` — plain text
 - `bold`, `italic`, `monospace`, `highlight` — constrained and unconstrained forms
 - `superscript`, `subscript`
@@ -99,21 +102,156 @@ Two separate layers with different purposes:
 
 These are starting points; we'll refine as we implement and test on real documents.
 
-| Element | Rule |
-|---------|------|
-| Print width | 80 (configurable via Prettier's `printWidth`) |
-| Paragraph reflow | Yes, to `printWidth` |
-| Heading style | `== Title` (ATX, space after markers) |
-| Heading blank lines | One blank line before and after |
-| List markers | `*` for unordered, `.` for ordered |
-| Block delimiters | 4 characters (`----`, `====`, etc.) |
-| Blank lines between blocks | Exactly one |
-| Trailing blank lines | None |
-| Trailing whitespace | Removed |
-| Attribute entries | `:key: value` (single space after colon) |
-| Verbatim block content | Preserved exactly (no reformatting) |
-| Table alignment | Align `|` where practical |
-| Inline formatting | Normalize spacing; prefer constrained form where valid |
+| Element                    | Rule                                                   |
+| -------------------------- | ------------------------------------------------------ | ----------------- |
+| Print width                | 80 (configurable via Prettier's `printWidth`)          |
+| Paragraph reflow           | Yes, to `printWidth`                                   |
+| Heading style              | `== Title` (ATX, space after markers)                  |
+| Heading blank lines        | One blank line before and after                        |
+| List markers               | `*` for unordered, `.` for ordered                     |
+| Block delimiters           | 4 characters (`----`, `====`, etc.)                    |
+| Blank lines between blocks | Exactly one                                            |
+| Trailing blank lines       | None                                                   |
+| Trailing whitespace        | Removed                                                |
+| Attribute entries          | `:key: value` (single space after colon)               |
+| Verbatim block content     | Preserved exactly (no reformatting)                    |
+| Table alignment            | Align `                                                | ` where practical |
+| Inline formatting          | Normalize spacing; prefer constrained form where valid |
+
+## Error handling
+
+There is no such thing as invalid AsciiDoc. Any text file is valid
+AsciiDoc — at worst, unrecognized constructs render as paragraphs.
+Asciidoctor never rejects input, and neither should we.
+
+**Principle: format what you understand, preserve what you don't.**
+The plugin should never throw an error on any `.adoc` input.
+Constructs we haven't implemented yet, ambiguous markup, or
+unconventional syntax should all pass through verbatim rather than
+crashing the formatter.
+
+This means:
+
+- **Lexer failures** produce unrecognized text spans that flow
+  through as verbatim content, not exceptions.
+- **Parser failures** use Chevrotain's built-in error recovery
+  (token insertion, deletion, repetition re-sync, general re-sync)
+  to produce a partial CST. The AST builder preserves recovered
+  regions as raw text.
+- **AST builder assertions** for "impossible" states (e.g., a
+  grammar rule matched but its expected token is missing) are
+  genuine bugs in our parser — these can throw, since they indicate
+  a logic error we need to fix, not bad input.
+
+The only legitimate throw is if a file is not AsciiDoc at all
+(e.g., binary content), and even then Prettier's own infrastructure
+handles that before we're called.
+
+Chevrotain has four built-in recovery strategies (disabled by
+default, enabled via `recoveryEnabled: true` in the parser
+constructor):
+
+1. **Single token insertion** — if token Y is expected but token X
+   is found, and X would be valid after Y, the parser inserts a
+   virtual Y and continues.
+2. **Single token deletion** — if an unexpected token X appears but
+   the expected token Y immediately follows it, the parser skips X.
+3. **Repetition re-sync** — inside `MANY`/`AT_LEAST_ONE`, the
+   parser skips tokens until it finds the start of the next
+   iteration or the token expected after the repetition. This lets
+   later items in a sequence parse correctly even if an earlier
+   item is corrupted.
+4. **General re-sync** — when the above strategies fail, the parser
+   skips tokens until it reaches a synchronization point higher in
+   the rule stack. This is the most lossy strategy but prevents a
+   single bad construct from aborting the entire parse.
+
+When recovery fires, the resulting CST node is marked with
+`recoveredNode: true` and may have incomplete children (only the
+content parsed before the error). The AST builder must handle
+these defensively — it cannot assume all expected tokens are
+present on a recovered node.
+
+## Inline parser architecture
+
+The block-level parser is line-oriented: tokens are identified by
+start-of-line patterns (`^== `, `^* `, `^----$`, etc.) and the grammar
+describes how blocks nest. Inline content — bold, italic, links, macros —
+lives _within_ paragraph text and is character-oriented.
+
+### Why not a separate parser?
+
+Some AsciiDoc implementations (notably tree-sitter-asciidoc) use two
+separate grammars: one for blocks, one for inline content within blocks.
+The block parser emits raw text, and a second parser tokenizes and
+parses that text independently. This works but has real downsides:
+
+- **Position tracking gets fragile.** The inline parser receives
+  strings with offsets relative to the paragraph start, not the
+  document start. We'd need to translate positions back, and every
+  off-by-one is a bug in Prettier's `locStart`/`locEnd`.
+- **Two CSTs to merge.** The AST builder would need to combine
+  output from two parsers into a single tree — awkward and error-prone.
+- **Wasted tokenization.** The block-level lexer tokenizes paragraph
+  content as a single `TextContent` blob, then the inline lexer
+  re-tokenizes it from scratch.
+
+### Chosen approach: unified grammar with Chevrotain lexer modes
+
+We already use Chevrotain's `MultiModeLexer` with modes for verbatim
+content (`listing_verbatim`, `literal_verbatim`, `pass_verbatim`,
+`block_comment`). The inline parser extends this pattern by adding an
+`inline` lexer mode.
+
+The mode transitions:
+
+- **`default_mode` → `inline`**: When the lexer encounters the
+  start of paragraph text, a list item's text content, a block
+  title, or any other context where inline markup is valid, it
+  pushes into `inline` mode. In this mode, `*` produces a
+  `BoldMark` token instead of being part of `TextContent`, and
+  block-level tokens like `ListingBlockOpen` don't exist.
+- **`inline` → `default_mode`**: When the lexer hits a blank line
+  or structural boundary (block delimiter, heading marker, list
+  marker at the start of a new item), it pops back to `default_mode`.
+- **`inline` → verbatim modes**: Inline passthrough (`+text+`,
+  `pass:[...]`) suppresses further inline tokenization within
+  its content. This may use a dedicated mode or be handled by the
+  custom token matchers.
+
+The grammar is unified: block-level rules call inline rules naturally.
+
+```
+paragraph()    → MANY(inlineContent)
+inlineContent() → boldSpan | italicSpan | monoSpan | link | text | ...
+boldSpan()     → BoldOpen, MANY(inlineContent), BoldClose
+```
+
+This preserves position tracking (one lexer, one coordinate space),
+produces a single CST, and lets the AST builder visitor handle both
+block and inline nodes in one pass.
+
+### Custom token patterns for context-sensitive marks
+
+The constrained/unconstrained distinction for formatting marks
+(`*` vs `**`, `_` vs `__`, etc.) requires Chevrotain custom token
+pattern matchers. A constrained bold open (`*`) is only valid at a
+word boundary — preceded by whitespace, punctuation, or start of
+text. The custom matcher function receives the full text and current
+offset, allowing it to inspect surrounding characters.
+
+These matchers are substantial enough to warrant their own file
+(`src/parse/inline-tokens.ts`) but they register as token definitions
+in the `inline` lexer mode — they're not a separate lexer.
+
+### What stays in separate files
+
+The inline token definitions (`src/parse/inline-tokens.ts`) live
+in their own file because the custom pattern matchers are
+substantial. The inline grammar rules live in `src/parse/grammar.ts`
+alongside the block-level rules — they're methods on the same
+parser class. "Separate file for tokens" is about code
+organization, not separate parser instances.
 
 ## Why Chevrotain?
 
@@ -168,6 +306,7 @@ The trade-off is bundle size (~160 KB runtime dependency), which is irrelevant f
 ### What we'd have to build on top
 
 If we used Asciidoctor.js, we'd still need to:
+
 1. Pre-process source to extract comments, includes, and conditionals
 2. Post-process the model to compute character offsets by correlating back to source lines
 3. Write our own inline parser

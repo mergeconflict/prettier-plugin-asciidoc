@@ -17,10 +17,11 @@
 1. **Setup** — after Task 1 (vendor + skeleton)
 2. **Core block parsing** — after Task 7 (paragraphs, sections, comments, attributes, document header)
 3. **Lists** — after Task 9c (unordered, ordered, checklists, callouts)
-4. **Delimited blocks** — after Task 11b (leaf blocks, literal paragraphs, parent blocks, block attributes/titles, paragraph-form blocks, discrete headings, breaks, indented list continuation fix, admonitions, fenced code blocks, block masquerading)
-5. **Inline parsing** — after Task 16
-6. **Remaining block types** — after Task 21 (description lists, tables, macros, includes, conditionals)
-7. **Polish** — after Task 29 (reflow, list continuation, charrefs, index terms, TCK, integration tests, options, underline headings, explicit ordered markers, attribute refs in author line)
+4. **TCK baseline** — after Task 25 (conformance harness wired up, expected failures catalogued)
+5. **Delimited blocks** — after Task 11b (leaf blocks, literal paragraphs, parent blocks, block attributes/titles, paragraph-form blocks, discrete headings, breaks, indented list continuation fix, admonitions, fenced code blocks, delimiter length matching, block masquerading)
+6. **Inline parsing** — after Task 16
+7. **Remaining block types** — after Task 21 (description lists, tables, macros, includes, conditionals)
+8. **Polish** — after Task 29 (list continuation, charrefs, index terms, integration tests, options, underline headings, explicit ordered markers, attribute refs in author line)
 
 ### Parallelizable task groups
 
@@ -76,8 +77,11 @@ that feedback so it's not forgotten.
 - [x] Task 12d: Fix indented continuation lines in list items
 - [x] Task 13: Parse thematic breaks and page breaks
 - [x] Task 13b: Parse admonitions (paragraph-form and block-form)
+- [ ] Task 13d: Graceful error recovery — use Chevrotain's recovery instead of throwing
+- [ ] Task 25: TCK conformance test harness (moved up — TDD baseline)
 - [ ] Task 7b: Attribute references in document header author line
 - [ ] Task 10c: Backtick-fenced code blocks
+- [ ] Task 11c: Parent block delimiter length matching
 - [ ] Task 11b: Block masquerading (style-driven content model)
 - [ ] Task 14: Inline parser — bold, italic, monospace, highlight
 - [ ] Task 15: Inline parser — links and cross-references
@@ -90,7 +94,6 @@ that feedback so it's not forgotten.
 - [ ] Task 23: List continuation and complex list items
 - [ ] Task 24: Superscript, subscript, and character references
 - [ ] Task 24b: Index terms
-- [ ] Task 25: TCK conformance test harness
 - [ ] Task 26: End-to-end integration tests
 - [ ] Task 27: Plugin options
 - [ ] Task 28: Parse underline-style section titles
@@ -196,6 +199,51 @@ jj new
 
 ---
 
+## Task 11c: Parent block delimiter length matching
+
+Parent blocks (example, sidebar, open, quote) use the same token type for open
+and close delimiters. The lexer doesn't enforce that the close delimiter matches
+the open delimiter's length — `=====` (5) would be closed by `====` (4).
+Verbatim blocks already handle this correctly via `makeClosePattern`. Apply the
+same approach to parent blocks.
+
+**Approach:** Split each parent block's single delimiter token into separate
+open/close tokens. The close token uses a `makeClosePattern` custom matcher to
+ensure length matches the most recent open. This also eliminates the `GATE` hack
+in `parentBlockRule` — with distinct open/close token types, the grammar
+naturally distinguishes them.
+
+**Why not lexer modes?** Parent block content is recursive AsciiDoc, so a mode
+would need all `default_mode` tokens plus the close token. And since the same
+character sequence (`====`) serves as both open (for nesting) and close, the
+lexer can't disambiguate by mode alone — token priority would force one
+interpretation. The `makeClosePattern` approach solves length matching without
+mode overhead.
+
+**Files:**
+
+- Modify: `src/parse/tokens.ts` — split `ExampleBlockDelimiter` into `ExampleBlockOpen` / `ExampleBlockClose` (using `makeClosePattern`); same for `SidebarBlockDelimiter`, `QuoteBlockDelimiter`, `OpenBlockDelimiter`
+- Modify: `src/parse/grammar.ts` — update `parentBlockRule` to use distinct open/close tokens, remove the `GATE`
+- Modify: `src/parse/ast-builder.ts` — update CST visitor to use new token names
+- Modify: `src/parse/cst-types.ts` — update CST type definitions if needed
+- Modify: `tests/parser/` — update any tests that reference the old token names
+
+**Key test cases:**
+
+- `=====` (5) opened and closed with `=====` (5) — works
+- `=====` (5) followed by `====` (4) — the 4-char line is NOT the close delimiter (treated as nested or error)
+- Nested parent blocks of the same type with different lengths
+- Existing parent block tests pass (regression)
+
+**Commit:**
+
+```
+jj describe -m "fix: enforce delimiter length matching for parent blocks"
+jj new
+```
+
+---
+
 ## Task 11b: Block masquerading (style-driven content model)
 
 A style attribute on a delimited block changes its effective content model. This is the most important gap identified in the Asciidoctor API audit — without it, the formatter risks reflowing verbatim content or failing to parse compound content.
@@ -253,23 +301,18 @@ Parse inline formatting marks within paragraph text: `*bold*`, `_italic_`, `` `m
 
 **Files:**
 
-- Create: `src/parse/inline-tokens.ts` — inline-level token definitions with **custom token patterns**
-- Create: `src/parse/inline-grammar.ts` — inline parser (separate from block-level grammar)
+- Create: `src/parse/inline-tokens.ts` — inline-level token definitions with **custom token patterns**, registered in a new `inline` lexer mode
+- Modify: `src/parse/tokens.ts` — add `inline` mode to `multiModeDefinition`, define mode transitions (push on paragraph/list-item text start, pop on blank line/structural boundary)
+- Modify: `src/parse/grammar.ts` — add inline grammar rules (`inlineContent`, `boldSpan`, `italicSpan`, etc.) to the existing parser class
 - Modify: `src/ast.ts` — add inline node types
-- Modify: `src/parse/grammar.ts` — call inline parser for paragraph content
 - Modify: `src/parse/ast-builder.ts`
 - Modify: `src/printer.ts`
 - Create: `tests/parser/inline-formatting.test.ts`
 - Create: `tests/format/inline-formatting.test.ts`
 
-**Key design note:** This is where Chevrotain's **custom token patterns** become essential. Constrained formatting marks (`*`, `_`, `` ` ``, `#`) are only valid at word boundaries. The custom token matcher function receives all previously matched tokens, so it can inspect the preceding token to determine whether the current `*` is:
+**Architecture note:** See "Inline parser architecture" in `docs/design.md`. We use a unified grammar with Chevrotain lexer modes — NOT a separate parser. The existing `MultiModeLexer` already has modes for verbatim blocks; the `inline` mode extends this pattern. Block-level rules call inline rules naturally (`paragraph → MANY(inlineContent)`), producing a single CST with one coordinate space for position tracking.
 
-- A constrained bold open (preceded by whitespace or start of text)
-- A constrained bold close (followed by whitespace or end of text)
-- Part of an unconstrained `**` pair (no boundary requirement)
-- Literal text (none of the above)
-
-The inline parser may use a separate lexer instance or a dedicated lexer mode, since inline tokenization has completely different rules than block-level tokenization.
+**Custom token patterns** are needed for constrained vs unconstrained formatting marks. A constrained bold open (`*`) is only valid at word boundaries. The custom matcher function inspects the surrounding text at the current offset to determine whether `*` is a bold open, bold close, part of `**` unconstrained bold, or literal text.
 
 **Step 1: Write failing tests**
 
@@ -316,8 +359,8 @@ Parse `https://url[text]`, `link:path[text]`, `<<ref>>`, `<<ref,text>>`, `xref:d
 
 **Files:**
 
-- Modify: `src/parse/inline-tokens.ts` — add link/xref/inline-anchor tokens
-- Modify: `src/parse/inline-grammar.ts` — add link/xref/inline-anchor rules
+- Modify: `src/parse/inline-tokens.ts` — add link/xref/inline-anchor tokens to `inline` lexer mode
+- Modify: `src/parse/grammar.ts` — add link/xref/inline-anchor rules to the parser
 - Modify: `src/ast.ts` — add `LinkNode`, `XrefNode`, `InlineAnchorNode`
 - Modify: `src/parse/ast-builder.ts`
 - Modify: `src/printer.ts`
@@ -338,8 +381,8 @@ Parse `image:file[]`, `kbd:[Ctrl+S]`, `btn:[OK]`, `menu:File[Save]`, `footnote:[
 
 **Files:**
 
-- Modify: `src/parse/inline-tokens.ts` — add macro/passthrough tokens
-- Modify: `src/parse/inline-grammar.ts` — add macro/passthrough rules
+- Modify: `src/parse/inline-tokens.ts` — add macro/passthrough tokens to `inline` lexer mode
+- Modify: `src/parse/grammar.ts` — add macro/passthrough rules to the parser
 - Modify: `src/ast.ts`
 - Modify: `src/parse/ast-builder.ts`
 - Modify: `src/printer.ts`
@@ -530,7 +573,7 @@ jj new
 **Files:**
 
 - Modify: `src/parse/inline-tokens.ts` — add superscript/subscript/charref tokens
-- Modify: `src/parse/inline-grammar.ts`
+- Modify: `src/parse/grammar.ts`
 - Modify: `src/ast.ts`
 - Modify: `src/parse/ast-builder.ts`
 - Modify: `src/printer.ts`
@@ -561,7 +604,7 @@ indexterm2:[visible term]       ← macro form, visible
 **Files:**
 
 - Modify: `src/parse/inline-tokens.ts` — add index term tokens (`((`, `))`, `(((`, `)))`)
-- Modify: `src/parse/inline-grammar.ts` — add index term rules
+- Modify: `src/parse/grammar.ts` — add index term rules
 - Modify: `src/ast.ts` — add `IndexTermNode` with `visible` flag and `terms` array
 - Modify: `src/parse/ast-builder.ts`
 - Modify: `src/printer.ts`
@@ -586,38 +629,106 @@ jj new
 
 ---
 
-## Task 25: TCK conformance test harness
+## Task 13d: Graceful error recovery
+
+Stop throwing on lexer/parser errors. Use Chevrotain's built-in error recovery
+to produce partial results and preserve unrecognized input verbatim. See "Error
+handling" in `docs/design.md` for the principle.
+
+**Current state:** `src/parser.ts` throws on the first lexer error (line 48)
+and the first parser error (line 57). This means any input our grammar doesn't
+understand crashes the formatter instead of degrading gracefully. We chose
+Chevrotain partly for its error recovery but aren't using it.
+
+**What to change:**
+
+1. **Remove the lexer-error throw.** Chevrotain's lexer produces an `errors`
+   array but still returns a token stream. Unrecognized characters appear as
+   error entries. Convert these into a fallback token (e.g., `UnrecognizedText`)
+   that the parser treats as verbatim text content.
+
+2. **Remove the parser-error throw.** Chevrotain's parser uses four recovery
+   strategies (token insertion, deletion, repetition re-sync, general re-sync)
+   to produce a partial CST even when rules fail. The CST will contain
+   `recoveredNode` flags. Let the AST builder handle these — recovered regions
+   should pass through as raw text nodes preserving the original source.
+
+3. **Keep AST builder assertions.** The `throw new Error(...)` calls inside
+   `ast-builder.ts` and `block-helpers.ts` guard against "impossible" states
+   (grammar matched a rule but expected tokens are missing). These indicate
+   bugs in our grammar, not bad input. They should stay as-is.
+
+4. **Add tests for graceful degradation.** Feed the parser input it can't
+   handle and verify it produces output (even if imperfect) rather than
+   throwing. Key cases:
+   - Unknown block delimiter characters
+   - Unclosed delimited blocks (EOF before close delimiter)
+   - Malformed attribute entries
+   - Input that is just plain prose (no AsciiDoc constructs)
+   - Mixed recognized and unrecognized constructs in one document
+
+**Files:**
+
+- Modify: `src/parser.ts` — remove throws on lexer/parser errors, wire up
+  fallback behavior
+- Modify: `src/parse/tokens.ts` — add `UnrecognizedText` fallback token if
+  needed
+- Modify: `src/parse/grammar.ts` — ensure parser recovery settings are
+  configured (Chevrotain's `recoveryEnabled` flag)
+- Modify: `src/parse/ast-builder.ts` — handle recovered CST regions
+- Create: `tests/parser/error-recovery.test.ts`
+- Create: `tests/format/error-recovery.test.ts`
+
+**Commit:**
+
+```
+jj describe -m "feat: graceful error recovery — never throw on valid AsciiDoc input"
+jj new
+```
+
+---
+
+## Task 25: TCK conformance test harness (moved up — TDD baseline)
 
 Build `toASG()` and wire up tests against the official AsciiDoc TCK expected outputs.
+This task runs early, before the remaining feature work, so it serves as a
+project-level TDD baseline: each subsequent task should turn red TCK fixtures green.
 
 **Files:**
 
 - Create: `tests/tck/to-asg.ts`
 - Create: `tests/tck/conformance.test.ts`
 
-**Step 1: Implement `toASG()`**
+**Step 1: Implement `toASG()` for currently-implemented constructs**
 
-Converts our AST → ASG JSON:
+Converts our AST → ASG JSON. Initially covers only the constructs we already
+parse (paragraphs, sections, lists, delimited blocks, comments, attribute
+entries, admonitions, breaks). Inline content is emitted as raw text spans
+for now — inline node mapping (bold→span/strong, etc.) will be added in
+Tasks 14-16.
 
 - Strip comments, attribute entries, include/conditional directives
 - Map our node types to ASG names (`paragraph` → `{name: "paragraph", type: "block"}`)
 - Convert `position` to ASG `location` format (`[{line, col}, {line, col}]`)
-- Inline nodes: map bold→span/strong, italic→span/emphasis, etc.
 
 **Step 2: Write conformance tests**
 
-- Download TCK test fixtures (or vendor them)
+- TCK fixtures are already vendored in `vendor/`
 - For each `*-input.adoc` / `*-output.json` pair:
   - Parse the input with our parser
   - Convert to ASG with `toASG()`
   - Compare against expected output JSON
+- Fixtures requiring unimplemented constructs (inline formatting, tables,
+  description lists, macros, includes, conditionals) should be catalogued
+  as expected failures (e.g. `it.todo` or `it.fails`) with a comment
+  noting which task will address them
 
-**Step 3: Fix any discrepancies found**
+**Step 3: Fix any discrepancies found in already-implemented constructs**
 
 **Step 4: Run all checks, commit**
 
 ```
-jj describe -m "feat: TCK conformance test harness"
+jj describe -m "feat: TCK conformance test harness (TDD baseline)"
 jj new
 ```
 

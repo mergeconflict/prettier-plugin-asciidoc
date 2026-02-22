@@ -31,11 +31,11 @@ describe("ordered list parsing", () => {
     expect(children).toHaveLength(1);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    const { children: [parent] } = list;
+    const {
+      children: [parent],
+    } = list;
     // Parent item has text + nested list
-    const nestedList = parent.children.find(
-      (c) => c.type === "list",
-    );
+    const nestedList = parent.children.find((c) => c.type === "list");
     expect(nestedList).toBeDefined();
     if (nestedList?.type === "list") {
       expect(nestedList.variant).toBe("ordered");
@@ -53,7 +53,9 @@ describe("ordered list parsing", () => {
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
     // The text content should contain both lines
-    const { children: [item] } = list;
+    const {
+      children: [item],
+    } = list;
     const textNode = item.children.find((c) => c.type === "text");
     expect(textNode).toBeDefined();
     if (textNode?.type === "text") {
@@ -83,7 +85,9 @@ describe("ordered list parsing", () => {
   test("item text excludes marker", () => {
     const { children } = parse(". Hello world\n");
     const list = firstList(children);
-    const { children: [item] } = list;
+    const {
+      children: [item],
+    } = list;
     const textNode = item.children.find((c) => c.type === "text");
     expect(textNode).toBeDefined();
     if (textNode?.type === "text") {
@@ -97,13 +101,17 @@ describe("ordered list parsing", () => {
     const { children } = parse(input);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    const { children: [l1Item] } = list;
+    const {
+      children: [l1Item],
+    } = list;
     const l2List = l1Item.children.find((c) => c.type === "list");
     if (l2List?.type !== "list") {
       throw new Error("Expected nested list at level 2");
     }
     expect(l2List.children).toHaveLength(1);
-    const { children: [l2Item] } = l2List;
+    const {
+      children: [l2Item],
+    } = l2List;
     const l3List = l2Item.children.find((c) => c.type === "list");
     if (l3List?.type !== "list") {
       throw new Error("Expected nested list at level 3");
@@ -115,8 +123,7 @@ describe("ordered list parsing", () => {
   // AsciiDoc supports 5 nesting levels. Verify all depths parse
   // correctly and produce the right tree structure.
   test("all five nesting levels", () => {
-    const input =
-      ". L1\n.. L2\n... L3\n.... L4\n..... L5\n";
+    const input = ". L1\n.. L2\n... L3\n.... L4\n..... L5\n";
     const { children } = parse(input);
     const list = firstList(children);
     let current = list;
@@ -140,10 +147,10 @@ describe("ordered list parsing", () => {
     const input = ". Parent\n.. Child A\n.. Child B\n";
     const { children } = parse(input);
     const list = firstList(children);
-    const { children: [parentItem] } = list;
-    const nestedList = parentItem.children.find(
-      (c) => c.type === "list",
-    );
+    const {
+      children: [parentItem],
+    } = list;
+    const nestedList = parentItem.children.find((c) => c.type === "list");
     if (nestedList?.type !== "list") {
       throw new Error("Expected nested list");
     }
@@ -153,19 +160,18 @@ describe("ordered list parsing", () => {
   // Indented continuation lines are part of the same list item,
   // not separate literal paragraphs.
   test("indented continuation lines in ordered list", () => {
-    const input =
-      ". First line\n  continuation line\n";
+    const input = ". First line\n  continuation line\n";
     const { children } = parse(input);
     expect(children).toHaveLength(1);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    const { children: [item] } = list;
+    const {
+      children: [item],
+    } = list;
     const textNode = item.children.find((c) => c.type === "text");
     if (textNode?.type !== "text") {
       throw new Error("Expected text node");
     }
-    expect(textNode.value).toBe(
-      "First line\ncontinuation line",
-    );
+    expect(textNode.value).toBe("First line\ncontinuation line");
   });
 });

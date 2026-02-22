@@ -39,9 +39,7 @@ describe("callout list parsing", () => {
   test("callout item text excludes marker", () => {
     const { children } = parse("<1> Hello world\n");
     const list = firstList(children);
-    const textNode = list.children[0].children.find(
-      (c) => c.type === "text",
-    );
+    const textNode = list.children[0].children.find((c) => c.type === "text");
     if (textNode?.type !== "text") throw new Error("Expected text");
     expect(textNode.value).toBe("Hello world");
   });
@@ -81,9 +79,7 @@ describe("callout list parsing", () => {
     const { children } = parse("<1> First line\nsecond line\n");
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    const textNode = list.children[0].children.find(
-      (c) => c.type === "text",
-    );
+    const textNode = list.children[0].children.find((c) => c.type === "text");
     if (textNode?.type !== "text") throw new Error("Expected text");
     expect(textNode.value).toContain("First line");
     expect(textNode.value).toContain("second line");

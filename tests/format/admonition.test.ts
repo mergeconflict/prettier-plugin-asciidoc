@@ -39,31 +39,26 @@ describe("paragraph-form admonition formatting", () => {
     const input =
       "NOTE: This is a very long note that should be reflowed when it exceeds the print width boundary.\n";
     const expected =
-      "NOTE: This is a very long note that should be reflowed when it exceeds the print\n      width boundary.\n";
+      "NOTE: This is a very long note that should be reflowed when it exceeds the print\nwidth boundary.\n";
     expect(await formatAdoc(input)).toBe(expected);
   });
 
-  test("continuation lines align under label text", async () => {
-    // With a narrow print width, the text wraps and
-    // continuation lines should be indented to align with
-    // the start of the text (after the label).
+  test("continuation lines start at column 0", async () => {
+    // Leading spaces in AsciiDoc denote an indented literal
+    // block, so continuation lines must start at column 0.
     const input =
       "WARNING: First word second word third word fourth word fifth word sixth word.\n";
     const result = await formatAdoc(input, { printWidth: 40 });
-    // Verify that continuation lines start with spaces
-    // matching the label width ("WARNING: " = 9 chars).
     const lines = result.trimEnd().split("\n");
     expect(lines.length).toBeGreaterThan(1);
     for (const continuationLine of lines.slice(1)) {
-      expect(continuationLine).toMatch(/^ {9}/v);
+      expect(continuationLine).toMatch(/^\S/v);
     }
   });
 
   test("multi-line paragraph-form text is reflowed", async () => {
-    const input =
-      "NOTE: First line\nsecond line\nthird line\n";
-    const expected =
-      "NOTE: First line second line third line\n";
+    const input = "NOTE: First line\nsecond line\nthird line\n";
+    const expected = "NOTE: First line second line third line\n";
     expect(await formatAdoc(input)).toBe(expected);
   });
 });
@@ -80,8 +75,7 @@ describe("block-form admonition formatting (example block)", () => {
   });
 
   test("[IMPORTANT] + example block round-trips", async () => {
-    const input =
-      "[IMPORTANT]\n====\nDo not forget.\n====\n";
+    const input = "[IMPORTANT]\n====\nDo not forget.\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
@@ -91,14 +85,12 @@ describe("block-form admonition formatting (example block)", () => {
   });
 
   test("[WARNING] + example block round-trips", async () => {
-    const input =
-      "[WARNING]\n====\nBe careful.\n====\n";
+    const input = "[WARNING]\n====\nBe careful.\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   test("block-form with multiple paragraphs round-trips", async () => {
-    const input =
-      "[NOTE]\n====\nFirst paragraph.\n\nSecond paragraph.\n====\n";
+    const input = "[NOTE]\n====\nFirst paragraph.\n\nSecond paragraph.\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 });
@@ -115,34 +107,29 @@ describe("block-form admonition formatting (open block)", () => {
   });
 
   test("open block with multiple paragraphs round-trips", async () => {
-    const input =
-      "[WARNING]\n--\nFirst.\n\nSecond.\n--\n";
+    const input = "[WARNING]\n--\nFirst.\n\nSecond.\n--\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 });
 
 describe("admonition formatting in context", () => {
   test("paragraph-form admonition between paragraphs", async () => {
-    const input =
-      "Before.\n\nNOTE: A note.\n\nAfter.\n";
+    const input = "Before.\n\nNOTE: A note.\n\nAfter.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   test("block-form admonition between paragraphs", async () => {
-    const input =
-      "Before.\n\n[NOTE]\n====\nA note.\n====\n\nAfter.\n";
+    const input = "Before.\n\n[NOTE]\n====\nA note.\n====\n\nAfter.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   test("block title + block-form admonition stacks", async () => {
-    const input =
-      ".My Note\n[NOTE]\n====\nContent.\n====\n";
+    const input = ".My Note\n[NOTE]\n====\nContent.\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   test("anchor + block-form admonition stacks", async () => {
-    const input =
-      "[[my-note]]\n[TIP]\n====\nContent.\n====\n";
+    const input = "[[my-note]]\n[TIP]\n====\nContent.\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 

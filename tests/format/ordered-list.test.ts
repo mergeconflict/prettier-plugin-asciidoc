@@ -48,8 +48,7 @@ describe("ordered list formatting", () => {
 
   // All 5 nesting levels preserved through formatting.
   test("five-level nesting preserved", async () => {
-    const input =
-      ". L1\n.. L2\n... L3\n.... L4\n..... L5\n";
+    const input = ". L1\n.. L2\n... L3\n.... L4\n..... L5\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 

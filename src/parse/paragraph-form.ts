@@ -81,9 +81,7 @@ function getAdmonitionVariant(
 function paragraphToContent(paragraph: ParagraphNode): string {
   // ParagraphNode.children is [TextNode] — the text node's
   // value already has lines joined by \n from the AST builder.
-  return paragraph.children
-    .map((child) => child.value)
-    .join("\n");
+  return paragraph.children.map((child) => child.value).join("\n");
 }
 
 /**
@@ -94,9 +92,7 @@ function paragraphToContent(paragraph: ParagraphNode): string {
  *
  * Returns a new array (does not mutate the input).
  */
-export function convertParagraphFormBlocks(
-  blocks: BlockNode[],
-): BlockNode[] {
+export function convertParagraphFormBlocks(blocks: BlockNode[]): BlockNode[] {
   const result: BlockNode[] = [];
   let index = FIRST;
 
@@ -106,10 +102,7 @@ export function convertParagraphFormBlocks(
     // When a block attribute list with a recognized style
     // (source, listing, etc.) is followed by a paragraph,
     // convert the paragraph to a paragraph-form block.
-    if (
-      current.type === "blockAttributeList" &&
-      index + NEXT < blocks.length
-    ) {
+    if (current.type === "blockAttributeList" && index + NEXT < blocks.length) {
       const { [index + NEXT]: next } = blocks;
       if (next.type === "paragraph") {
         const variant = getParagraphFormVariant(current);

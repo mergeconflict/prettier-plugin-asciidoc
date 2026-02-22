@@ -10,12 +10,7 @@
  * tracks open nesting levels, and items are pushed/popped as the
  * depth changes.
  */
-import type {
-  ListNode,
-  ListItemNode,
-  TextNode,
-  Location,
-} from "../ast.js";
+import type { ListNode, ListItemNode, TextNode, Location } from "../ast.js";
 import { EMPTY, FIRST, LAST_ELEMENT } from "../constants.js";
 // When draining the nesting stack, stop when only the root level
 // remains (stack has one entry).
@@ -97,10 +92,7 @@ function topLevel(stack: NestingLevel[]): NestingLevel {
 // the core operation when ascending from a deeper nesting depth.
 // Appends a nested list to a parent item and extends the parent's
 // end position to cover the nested children.
-function attachNestedList(
-  parent: ListItemNode,
-  nested: ListNode,
-): void {
+function attachNestedList(parent: ListItemNode, nested: ListNode): void {
   parent.children.push(nested);
   // Use Object.assign to update the end position without triggering
   // the no-param-reassign lint rule for property assignment.
@@ -130,7 +122,6 @@ function collapseLevel(
   attachNestedList(parentListItem, nestedList);
 }
 
-
 /**
  * Nests flat list items into a tree of ListNode/ListItemNode based
  * on depth. Uses a stack-based algorithm similar to nestSections:
@@ -142,8 +133,7 @@ export function nestListItems(
   flatItems: FlatListItem[],
   variant: ListNode["variant"] = "unordered",
 ): ListNode {
-  const firstDepth =
-    flatItems.length > EMPTY ? flatItems[FIRST].depth : FIRST;
+  const firstDepth = flatItems.length > EMPTY ? flatItems[FIRST].depth : FIRST;
   const stack: NestingLevel[] = [
     { depth: firstDepth, items: [], parentItem: undefined },
   ];
@@ -163,9 +153,7 @@ export function nestListItems(
     }
 
     // Going deeper — push a new nesting level.
-    if (
-      topLevel(stack).depth < flatItem.depth
-    ) {
+    if (topLevel(stack).depth < flatItem.depth) {
       stack.push({
         depth: flatItem.depth,
         items: [],

@@ -11,6 +11,10 @@
  * All tokens containing newlines need `line_breaks: true` so Chevrotain tracks
  * line/column positions correctly through them.
  *
+ * Chevrotain rejects `^` and `$` anchors in token patterns. Where we need
+ * "end of line" semantics, we use `(?![^\n])` — a negative lookahead that
+ * asserts the match is followed by a newline or end of input.
+ *
  * Block comments use a multi-mode lexer: when a `////` delimiter is seen, the
  * lexer pushes into `block_comment` mode where everything is captured verbatim
  * until the closing `////` delimiter. This prevents block comment content from
@@ -191,8 +195,7 @@ export const BlockCommentEnd = createToken({
  * Line comment: `//` followed by a space (then optional text)
  * or end of line. `//path` (no space) is NOT a comment.
  * The negative lookahead `(?!\S)` rejects `//` followed by
- * a non-whitespace char — Chevrotain forbids `$` anchors,
- * so we use this pattern instead.
+ * a non-whitespace char.
  * Must precede TextContent so the lexer prefers it.
  */
 export const LineComment = createToken({
@@ -243,8 +246,13 @@ function makeClosePattern(
   delimiterChar: string,
   openTokenName: string,
 ): { exec: CustomPatternMatcherFunc } {
+  // The negative lookahead (?![^\n]) ensures the delimiter
+  // must be the entire line content (followed by newline or
+  // EOF). Without this, `....x` inside a `....`-delimited
+  // literal block would match `....` as a close delimiter,
+  // leaving `x` as stray text — breaking idempotency.
   const regex = new RegExp(
-    `\\${delimiterChar}{${MIN_DELIMITER_LENGTH},}`,
+    `\\${delimiterChar}{${MIN_DELIMITER_LENGTH},}(?![^\\n])`,
   );
 
   return {
@@ -471,10 +479,15 @@ export const IndentedLine = createToken({
  * Must be last in the token priority order so that more specific
  * tokens (headings, comments, list markers, etc.) are matched
  * first.
+ *
+ * The `\S` anchor in the middle requires at least one
+ * non-whitespace character, so whitespace-only lines are not
+ * tokenized as text. In AsciiDoc, a line containing only spaces
+ * or tabs is a blank line (block separator), not content.
  */
 export const TextContent = createToken({
   name: "TextContent",
-  pattern: /[^\n]+/,
+  pattern: /[^\n]*\S[^\n]*/,
 });
 
 /**

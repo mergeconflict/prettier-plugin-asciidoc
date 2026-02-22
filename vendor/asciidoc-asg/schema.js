@@ -1,3 +1,3 @@
-import fs from 'node:fs'
+import fs from "node:fs";
 
-export default JSON.parse(fs.readFileSync('./schema.json'))
+export default JSON.parse(fs.readFileSync("./schema.json"));

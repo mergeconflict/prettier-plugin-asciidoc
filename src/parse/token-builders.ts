@@ -16,14 +16,11 @@ import type {
   BlockNode,
 } from "../ast.js";
 import { FIRST, MARKER_OFFSET } from "../constants.js";
+import { unreachable } from "../unreachable.js";
 import type { BlockCstChildren } from "./cst-types.js";
-import {
-  tokenStartLocation,
-  tokenEndLocation,
-} from "./positions.js";
+import { tokenStartLocation, tokenEndLocation } from "./positions.js";
 
-const SECTION_MARKER_RE =
-  /^(?<markers>={2,6})\s+(?<title>.*)/v;
+const SECTION_MARKER_RE = /^(?<markers>={2,6})\s+(?<title>.*)/v;
 
 // The lexer captures the entire heading line as one token
 // (e.g. "== My Title"). We need to split it here because
@@ -31,16 +28,15 @@ const SECTION_MARKER_RE =
 // needs them independently to reconstruct the heading with
 // normalized whitespace.
 function buildSection(token: IToken): SectionNode {
+  // The lexer's SectionMarker pattern guarantees this regex
+  // matches — if it doesn't, the token definition is wrong.
   const match = SECTION_MARKER_RE.exec(token.image);
-  if (match?.groups === undefined) {
-    throw new Error(
-      `Invalid section marker: ${token.image}`,
-    );
-  }
+  const groups =
+    match?.groups ?? unreachable(`Invalid section marker: ${token.image}`);
   return {
     type: "section",
-    level: match.groups.markers.length - MARKER_OFFSET,
-    heading: match.groups.title.trim(),
+    level: groups.markers.length - MARKER_OFFSET,
+    heading: groups.title.trim(),
     children: [],
     position: {
       start: tokenStartLocation(token),
@@ -57,12 +53,8 @@ const DOCUMENT_TITLE_PREFIX_LEN = 2;
 // buildSection, the lexer captures the entire line as one
 // token and we extract the title text here so the printer
 // can normalize whitespace.
-function buildDocumentTitle(
-  token: IToken,
-): DocumentTitleNode {
-  const title = token.image
-    .slice(DOCUMENT_TITLE_PREFIX_LEN)
-    .trim();
+function buildDocumentTitle(token: IToken): DocumentTitleNode {
+  const title = token.image.slice(DOCUMENT_TITLE_PREFIX_LEN).trim();
   return {
     type: "documentTitle",
     title,
@@ -85,9 +77,7 @@ function buildLineComment(token: IToken): CommentNode {
   const raw = token.image.slice(LINE_COMMENT_PREFIX_LEN);
   // If the comment has content, it starts with a space —
   // strip it.
-  const value = raw.startsWith(" ")
-    ? raw.slice(LINE_COMMENT_SPACE_LEN)
-    : raw;
+  const value = raw.startsWith(" ") ? raw.slice(LINE_COMMENT_SPACE_LEN) : raw;
 
   return {
     type: "comment",
@@ -144,9 +134,7 @@ function buildBlockAnchor(token: IToken): BlockAnchorNode {
 const BLOCK_ATTR_LIST_PREFIX_LEN = 1;
 const BLOCK_ATTR_LIST_SUFFIX_LEN = 1;
 
-function buildBlockAttributeList(
-  token: IToken,
-): BlockAttributeListNode {
+function buildBlockAttributeList(token: IToken): BlockAttributeListNode {
   const value = token.image.slice(
     BLOCK_ATTR_LIST_PREFIX_LEN,
     -BLOCK_ATTR_LIST_SUFFIX_LEN,

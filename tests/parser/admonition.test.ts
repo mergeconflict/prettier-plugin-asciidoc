@@ -79,15 +79,11 @@ describe("paragraph-form admonitions", () => {
   });
 
   test("multi-line paragraph-form admonition", () => {
-    const { children } = parse(
-      "NOTE: First line\nsecond line\nthird line\n",
-    );
+    const { children } = parse("NOTE: First line\nsecond line\nthird line\n");
     expect(children).toHaveLength(1);
     const node = admonitionAt(children, 0);
     expect(node.variant).toBe("note");
-    expect(node.content).toBe(
-      "First line\nsecond line\nthird line",
-    );
+    expect(node.content).toBe("First line\nsecond line\nthird line");
   });
 
   test("position tracking for paragraph-form admonition", () => {
@@ -99,9 +95,7 @@ describe("paragraph-form admonitions", () => {
   });
 
   test("paragraph-form admonition between paragraphs", () => {
-    const { children } = parse(
-      "Before.\n\nNOTE: A note.\n\nAfter.\n",
-    );
+    const { children } = parse("Before.\n\nNOTE: A note.\n\nAfter.\n");
     expect(children).toHaveLength(3);
     expect(children[0].type).toBe("paragraph");
     expect(children[1].type).toBe("admonition");
@@ -111,9 +105,7 @@ describe("paragraph-form admonitions", () => {
 
 describe("block-form admonitions (example block)", () => {
   test("[NOTE] + example block produces delimited admonition", () => {
-    const { children } = parse(
-      "[NOTE]\n====\nContent.\n====\n",
-    );
+    const { children } = parse("[NOTE]\n====\nContent.\n====\n");
     expect(children).toHaveLength(2);
     expect(children[0].type).toBe("blockAttributeList");
     const node = admonitionAt(children, 1);
@@ -125,9 +117,7 @@ describe("block-form admonitions (example block)", () => {
   });
 
   test("[TIP] + example block", () => {
-    const { children } = parse(
-      "[TIP]\n====\nA tip.\n====\n",
-    );
+    const { children } = parse("[TIP]\n====\nA tip.\n====\n");
     expect(children).toHaveLength(2);
     const node = admonitionAt(children, 1);
     expect(node.variant).toBe("tip");
@@ -136,25 +126,19 @@ describe("block-form admonitions (example block)", () => {
   });
 
   test("[IMPORTANT] + example block", () => {
-    const { children } = parse(
-      "[IMPORTANT]\n====\nDo not forget.\n====\n",
-    );
+    const { children } = parse("[IMPORTANT]\n====\nDo not forget.\n====\n");
     const node = admonitionAt(children, 1);
     expect(node.variant).toBe("important");
   });
 
   test("[CAUTION] + example block", () => {
-    const { children } = parse(
-      "[CAUTION]\n====\nWatch out.\n====\n",
-    );
+    const { children } = parse("[CAUTION]\n====\nWatch out.\n====\n");
     const node = admonitionAt(children, 1);
     expect(node.variant).toBe("caution");
   });
 
   test("[WARNING] + example block", () => {
-    const { children } = parse(
-      "[WARNING]\n====\nBe careful.\n====\n",
-    );
+    const { children } = parse("[WARNING]\n====\nBe careful.\n====\n");
     const node = admonitionAt(children, 1);
     expect(node.variant).toBe("warning");
   });
@@ -174,9 +158,7 @@ describe("block-form admonitions (example block)", () => {
 
 describe("block-form admonitions (open block)", () => {
   test("[CAUTION] + open block", () => {
-    const { children } = parse(
-      "[CAUTION]\n--\nContent.\n--\n",
-    );
+    const { children } = parse("[CAUTION]\n--\nContent.\n--\n");
     expect(children).toHaveLength(2);
     expect(children[0].type).toBe("blockAttributeList");
     const node = admonitionAt(children, 1);
@@ -186,9 +168,7 @@ describe("block-form admonitions (open block)", () => {
   });
 
   test("[NOTE] + open block with multiple paragraphs", () => {
-    const { children } = parse(
-      "[NOTE]\n--\nFirst.\n\nSecond.\n--\n",
-    );
+    const { children } = parse("[NOTE]\n--\nFirst.\n\nSecond.\n--\n");
     expect(children).toHaveLength(2);
     const node = admonitionAt(children, 1);
     expect(node.variant).toBe("note");
@@ -201,9 +181,7 @@ describe("admonition edge cases", () => {
   // Non-admonition attribute lists followed by parent blocks
   // should remain as regular parent blocks.
   test("[#myid] + example block is NOT an admonition", () => {
-    const { children } = parse(
-      "[#myid]\n====\nContent.\n====\n",
-    );
+    const { children } = parse("[#myid]\n====\nContent.\n====\n");
     expect(children).toHaveLength(2);
     expect(children[0].type).toBe("blockAttributeList");
     expect(children[1].type).toBe("parentBlock");
@@ -213,9 +191,7 @@ describe("admonition edge cases", () => {
   // be recognized (AsciiDoc typically uses uppercase, but the
   // extractStyle function normalizes to uppercase).
   test("[note] lowercase in attribute list is recognized", () => {
-    const { children } = parse(
-      "[note]\n====\nContent.\n====\n",
-    );
+    const { children } = parse("[note]\n====\nContent.\n====\n");
     expect(children).toHaveLength(2);
     const node = admonitionAt(children, 1);
     expect(node.variant).toBe("note");
@@ -225,9 +201,7 @@ describe("admonition edge cases", () => {
   // becomes an admonition with the custom variant. Asciidoctor
   // treats any uppercase name as a custom admonition style.
   test("[EXERCISE] + example block is a custom admonition", () => {
-    const { children } = parse(
-      "[EXERCISE]\n====\nContent.\n====\n",
-    );
+    const { children } = parse("[EXERCISE]\n====\nContent.\n====\n");
     // The [EXERCISE] attribute list is kept as metadata,
     // followed by the admonition node.
     expect(children).toHaveLength(2);

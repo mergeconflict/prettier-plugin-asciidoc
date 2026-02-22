@@ -43,15 +43,13 @@ describe("discrete heading formatting", () => {
 
   // Discrete heading inside a section.
   test("discrete heading inside a section", async () => {
-    const input =
-      "== Section\n\n[discrete]\n=== Standalone\n\nParagraph.\n";
+    const input = "== Section\n\n[discrete]\n=== Standalone\n\nParagraph.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
   // Multiple discrete headings in sequence.
   test("consecutive discrete headings", async () => {
-    const input =
-      "[discrete]\n== First\n\n[discrete]\n== Second\n";
+    const input = "[discrete]\n== First\n\n[discrete]\n== Second\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 

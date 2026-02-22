@@ -31,11 +31,11 @@ describe("unordered list parsing", () => {
     expect(children).toHaveLength(1);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    const { children: [parent] } = list;
+    const {
+      children: [parent],
+    } = list;
     // Parent item has text + nested list
-    const nestedList = parent.children.find(
-      (c) => c.type === "list",
-    );
+    const nestedList = parent.children.find((c) => c.type === "list");
     expect(nestedList).toBeDefined();
     if (nestedList?.type === "list") {
       expect(nestedList.variant).toBe("unordered");
@@ -53,7 +53,9 @@ describe("unordered list parsing", () => {
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
     // The text content should contain both lines
-    const { children: [item] } = list;
+    const {
+      children: [item],
+    } = list;
     const textNode = item.children.find((c) => c.type === "text");
     expect(textNode).toBeDefined();
     if (textNode?.type === "text") {
@@ -82,7 +84,9 @@ describe("unordered list parsing", () => {
   test("list item text excludes marker", () => {
     const { children } = parse("* Hello world\n");
     const list = firstList(children);
-    const { children: [item] } = list;
+    const {
+      children: [item],
+    } = list;
     const textNode = item.children.find((c) => c.type === "text");
     expect(textNode).toBeDefined();
     if (textNode?.type === "text") {
@@ -96,13 +100,17 @@ describe("unordered list parsing", () => {
     const { children } = parse(input);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    const { children: [l1Item] } = list;
+    const {
+      children: [l1Item],
+    } = list;
     const l2List = l1Item.children.find((c) => c.type === "list");
     if (l2List?.type !== "list") {
       throw new Error("Expected nested list at level 2");
     }
     expect(l2List.children).toHaveLength(1);
-    const { children: [l2Item] } = l2List;
+    const {
+      children: [l2Item],
+    } = l2List;
     const l3List = l2Item.children.find((c) => c.type === "list");
     if (l3List?.type !== "list") {
       throw new Error("Expected nested list at level 3");
@@ -114,8 +122,7 @@ describe("unordered list parsing", () => {
   // AsciiDoc supports 5 nesting levels. Verify all depths parse
   // correctly and produce the right tree structure.
   test("all five nesting levels", () => {
-    const input =
-      "* L1\n** L2\n*** L3\n**** L4\n***** L5\n";
+    const input = "* L1\n** L2\n*** L3\n**** L4\n***** L5\n";
     const { children } = parse(input);
     const list = firstList(children);
     let current = list;
@@ -139,10 +146,10 @@ describe("unordered list parsing", () => {
     const input = "* Parent\n** Child A\n** Child B\n";
     const { children } = parse(input);
     const list = firstList(children);
-    const { children: [parentItem] } = list;
-    const nestedList = parentItem.children.find(
-      (c) => c.type === "list",
-    );
+    const {
+      children: [parentItem],
+    } = list;
+    const nestedList = parentItem.children.find((c) => c.type === "list");
     if (nestedList?.type !== "list") {
       throw new Error("Expected nested list");
     }
@@ -153,8 +160,7 @@ describe("unordered list parsing", () => {
   // exercises the ascending loop's collapseLevel call twice
   // in a single pass (popping levels 3 and 2).
   test("return to root after deep nesting", () => {
-    const input =
-      "* First\n** Nested\n*** Deep\n* Second\n";
+    const input = "* First\n** Nested\n*** Deep\n* Second\n";
     const { children } = parse(input);
     const list = firstList(children);
     // First and Second are siblings at depth 1.
@@ -162,16 +168,12 @@ describe("unordered list parsing", () => {
     expect(list.children[0].depth).toBe(1);
     expect(list.children[1].depth).toBe(1);
     // Nested and Deep are inside First.
-    const nested = list.children[0].children.find(
-      (c) => c.type === "list",
-    );
+    const nested = list.children[0].children.find((c) => c.type === "list");
     if (nested?.type !== "list") {
       throw new Error("Expected nested list under First");
     }
     expect(nested.children).toHaveLength(1);
-    const deep = nested.children[0].children.find(
-      (c) => c.type === "list",
-    );
+    const deep = nested.children[0].children.find((c) => c.type === "list");
     if (deep?.type !== "list") {
       throw new Error("Expected nested list under Nested");
     }
@@ -188,9 +190,7 @@ describe("unordered list parsing", () => {
     expect(list.variant).toBe("unordered");
     expect(list.children).toHaveLength(1);
     expect(list.children[0].depth).toBe(1);
-    const textNode = list.children[0].children.find(
-      (c) => c.type === "text",
-    );
+    const textNode = list.children[0].children.find((c) => c.type === "text");
     if (textNode?.type !== "text") {
       throw new Error("Expected text node");
     }
@@ -201,13 +201,14 @@ describe("unordered list parsing", () => {
   // aligning text after the marker) are part of the same list item,
   // not separate literal paragraphs.
   test("indented continuation lines are part of list item", () => {
-    const input =
-      "* First line\n  continuation line\n  another continuation\n";
+    const input = "* First line\n  continuation line\n  another continuation\n";
     const { children } = parse(input);
     expect(children).toHaveLength(1);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    const { children: [item] } = list;
+    const {
+      children: [item],
+    } = list;
     const textNode = item.children.find((c) => c.type === "text");
     expect(textNode).toBeDefined();
     if (textNode?.type === "text") {
@@ -220,13 +221,14 @@ describe("unordered list parsing", () => {
   // Mixed indented and non-indented continuation lines are all
   // part of the same list item paragraph.
   test("mixed indented and non-indented continuation", () => {
-    const input =
-      "* First line\n  indented continuation\nflush continuation\n";
+    const input = "* First line\n  indented continuation\nflush continuation\n";
     const { children } = parse(input);
     expect(children).toHaveLength(1);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    const { children: [item] } = list;
+    const {
+      children: [item],
+    } = list;
     const textNode = item.children.find((c) => c.type === "text");
     expect(textNode).toBeDefined();
     if (textNode?.type === "text") {
@@ -238,27 +240,24 @@ describe("unordered list parsing", () => {
 
   // Indented continuation in a nested list item.
   test("indented continuation in nested list item", () => {
-    const input =
-      "* Parent\n** Child first line\n   child continuation\n";
+    const input = "* Parent\n** Child first line\n   child continuation\n";
     const { children } = parse(input);
     expect(children).toHaveLength(1);
     const list = firstList(children);
-    const { children: [parentItem] } = list;
-    const nestedList = parentItem.children.find(
-      (c) => c.type === "list",
-    );
+    const {
+      children: [parentItem],
+    } = list;
+    const nestedList = parentItem.children.find((c) => c.type === "list");
     if (nestedList?.type !== "list") {
       throw new Error("Expected nested list");
     }
-    const { children: [childItem] } = nestedList;
-    const textNode = childItem.children.find(
-      (c) => c.type === "text",
-    );
+    const {
+      children: [childItem],
+    } = nestedList;
+    const textNode = childItem.children.find((c) => c.type === "text");
     if (textNode?.type !== "text") {
       throw new Error("Expected text node");
     }
-    expect(textNode.value).toBe(
-      "Child first line\nchild continuation",
-    );
+    expect(textNode.value).toBe("Child first line\nchild continuation");
   });
 });

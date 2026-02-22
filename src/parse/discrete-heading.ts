@@ -23,17 +23,13 @@ import type {
 import { FIRST, NEXT, PAIR_LENGTH } from "../constants.js";
 
 // Check whether an attribute list node has the `discrete` style.
-function isDiscreteAttribute(
-  node: BlockAttributeListNode,
-): boolean {
+function isDiscreteAttribute(node: BlockAttributeListNode): boolean {
   return node.value === "discrete";
 }
 
 // Convert a SectionNode into a DiscreteHeadingNode by dropping
 // the children array (discrete headings don't nest content).
-function toDiscreteHeading(
-  section: SectionNode,
-): DiscreteHeadingNode {
+function toDiscreteHeading(section: SectionNode): DiscreteHeadingNode {
   return {
     type: "discreteHeading",
     level: section.level,
@@ -46,9 +42,7 @@ function toDiscreteHeading(
  * Scan the flat block array for `[discrete]` + section pairs
  * and convert them to discrete heading nodes.
  */
-export function convertDiscreteHeadings(
-  blocks: BlockNode[],
-): BlockNode[] {
+export function convertDiscreteHeadings(blocks: BlockNode[]): BlockNode[] {
   const result: BlockNode[] = [];
   let index = FIRST;
 
@@ -58,10 +52,7 @@ export function convertDiscreteHeadings(
     // When a block attribute list with value "discrete" is
     // followed by a section, convert the section to a discrete
     // heading. The attribute list is preserved as metadata.
-    if (
-      current.type === "blockAttributeList" &&
-      index + NEXT < blocks.length
-    ) {
+    if (current.type === "blockAttributeList" && index + NEXT < blocks.length) {
       const { [index + NEXT]: next } = blocks;
       if (next.type === "section" && isDiscreteAttribute(current)) {
         // Keep the attribute list as metadata and replace the
