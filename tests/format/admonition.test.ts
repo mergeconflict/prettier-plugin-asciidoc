@@ -61,6 +61,16 @@ describe("paragraph-form admonition formatting", () => {
     const expected = "NOTE: First line second line third line\n";
     expect(await formatAdoc(input)).toBe(expected);
   });
+
+  // Paragraph-form admonition reflow must not place a .word at
+  // line start where it would become a block title.
+  test("admonition reflow does not create block title", async () => {
+    const input = "NOTE: aaa bbb .title\n";
+    const result = await formatAdoc(input, { printWidth: 16 });
+    for (const line of result.split("\n")) {
+      expect(line).not.toMatch(/^\.[A-Za-z]/v);
+    }
+  });
 });
 
 describe("block-form admonition formatting (example block)", () => {
@@ -149,5 +159,16 @@ describe("admonition formatting in context", () => {
   test("custom admonition [EXERCISE] round-trips", async () => {
     const input = "[EXERCISE]\n====\nDo this exercise.\n====\n";
     expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Regression: a delimited admonition wrapping a same-variant
+  // parent block must use a longer delimiter to preserve nesting.
+  // Without this, both delimiters normalize to `****`, collapsing
+  // the nesting on re-parse.
+  test("admonition delimiter longer than nested same-variant block", async () => {
+    const input = "[M]\n\n******\n****\n//////\n///////\n//////";
+    expect(await formatAdoc(input)).toBe(
+      "[M]\n*****\n****\n////\n////\n\n////\n////\n****\n*****\n",
+    );
   });
 });

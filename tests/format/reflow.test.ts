@@ -116,4 +116,91 @@ describe("paragraph reflow", () => {
     const result = await formatAdoc(input);
     expect(result).toBe("");
   });
+
+  // Paragraph reflow must not place words at the start of a line
+  // where they would be re-parsed as AsciiDoc block syntax. A word
+  // starting with "." at the beginning of a line is a block title
+  // (.Title), which changes the AST on re-parse.
+  test("reflow does not create block title from .word at line start", async () => {
+    // With printWidth=10, fill() currently wraps this as:
+    //   "aaa bbb\n.title\n"
+    // But ".title" at line start is block title syntax in
+    // AsciiDoc, changing the AST on re-parse. The reflow
+    // must keep ".title" off the start of a line — either
+    // by repacking or by overflowing the printWidth.
+    const input = "aaa bbb .title\n";
+    const result = await formatAdoc(input, { printWidth: 10 });
+    expect(result).toBe("aaa\nbbb .title\n");
+  });
+
+  // Consecutive dangerous words should all be glued to their
+  // predecessor, forming one indivisible group.
+  test("consecutive .words are glued together", async () => {
+    const input = "aaa .foo .bar\n";
+    const result = await formatAdoc(input, { printWidth: 10 });
+    for (const line of result.split("\n")) {
+      expect(line).not.toMatch(/^\.[A-Za-z]/v);
+    }
+  });
+
+  // The reflow-with-glue output must itself be idempotent:
+  // formatting the result a second time should produce the
+  // same output.
+  test("reflow with .word glue is idempotent", async () => {
+    const input = "aaa bbb .title\n";
+    const first = await formatAdoc(input, { printWidth: 10 });
+    const second = await formatAdoc(first, { printWidth: 10 });
+    expect(second).toBe(first);
+  });
+
+  // Delimiter-char words like `*` and `-` are dangerous at line
+  // start (unordered list markers). The reflow must keep them
+  // off column 0.
+  test("reflow prevents list marker words at line start", async () => {
+    const input = "result is 10 - 5\n";
+    const result = await formatAdoc(input, { printWidth: 12 });
+    for (const line of result.split("\n")) {
+      // Line must not start with `- ` (list marker) or `* `.
+      expect(line).not.toMatch(/^[*\u002D] /v);
+    }
+  });
+
+  // Attribute entry pattern `:name:` at line start would be
+  // re-parsed as a document attribute.
+  test("reflow prevents attribute entry at line start", async () => {
+    const input = "use the :toc: attribute\n";
+    const result = await formatAdoc(input, { printWidth: 10 });
+    for (const line of result.split("\n")) {
+      expect(line).not.toMatch(/^:[A-Za-z]/v);
+    }
+  });
+
+  // Fenced code prefix ``` at line start would open a code block.
+  test("reflow prevents fenced code fence at line start", async () => {
+    const input = "use the ```ruby syntax\n";
+    const result = await formatAdoc(input, { printWidth: 10 });
+    for (const line of result.split("\n")) {
+      expect(line).not.toMatch(/^```/v);
+    }
+  });
+
+  // Block anchor `[[id]]` at line start would be re-parsed as
+  // an anchor definition.
+  test("reflow prevents block anchor at line start", async () => {
+    const input = "see the [[myid]] reference\n";
+    const result = await formatAdoc(input, { printWidth: 10 });
+    for (const line of result.split("\n")) {
+      expect(line).not.toMatch(/^\[\[/v);
+    }
+  });
+
+  // Callout list marker `<1>` at line start would be re-parsed
+  // as a callout list item.
+  test("reflow prevents callout marker at line start", async () => {
+    const input = "item number <1> here\n";
+    const result = await formatAdoc(input, { printWidth: 10 });
+    for (const line of result.split("\n")) {
+      expect(line).not.toMatch(/^<\d/v);
+    }
+  });
 });

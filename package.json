@@ -13,14 +13,14 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run build.ts",
+    "build": "bun scripts/build.ts",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "check": "tsc --noEmit",
-    "vendor": "bash scripts/vendor.sh",
+    "vendor": "bun scripts/vendor.ts",
     "fmt": "prettier --write .",
     "fmt:check": "prettier --check .",
-    "fuzz": "FUZZ=1 vitest run tests/parser/fuzz.test.ts tests/format/fuzz.test.ts"
+    "fuzz": "bun scripts/fuzz.ts"
   },
   "peerDependencies": {
     "prettier": "^3.0.0"

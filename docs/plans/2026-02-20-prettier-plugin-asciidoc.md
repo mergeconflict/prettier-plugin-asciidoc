@@ -21,7 +21,7 @@
 5. **Delimited blocks** — after Task 11b (leaf blocks, literal paragraphs, parent blocks, block attributes/titles, paragraph-form blocks, discrete headings, breaks, indented list continuation fix, admonitions, fenced code blocks, delimiter length matching, block masquerading)
 6. **Inline parsing** — after Task 16
 7. **Remaining block types** — after Task 21 (description lists, tables, macros, includes, conditionals)
-8. **Polish** — after Task 29 (list continuation, charrefs, index terms, integration tests, options, underline headings, explicit ordered markers, attribute refs in author line)
+8. **Polish** — after Task 29 (list continuation, charrefs, index terms, integration tests, options, underline headings, explicit ordered markers)
 
 ### Parallelizable task groups
 
@@ -77,13 +77,12 @@ that feedback so it's not forgotten.
 - [x] Task 12d: Fix indented continuation lines in list items
 - [x] Task 13: Parse thematic breaks and page breaks
 - [x] Task 13b: Parse admonitions (paragraph-form and block-form)
-- [ ] Task 13d: Graceful error recovery — use Chevrotain's recovery instead of throwing
-- [ ] Task 25: TCK conformance test harness (moved up — TDD baseline)
-- [ ] Task 7b: Attribute references in document header author line
-- [ ] Task 10c: Backtick-fenced code blocks
-- [ ] Task 11c: Parent block delimiter length matching
-- [ ] Task 11b: Block masquerading (style-driven content model)
-- [ ] Task 14: Inline parser — bold, italic, monospace, highlight
+- [x] Task 13d: Graceful error recovery — use Chevrotain's recovery instead of throwing
+- [x] Task 25: TCK conformance test harness (moved up — TDD baseline)
+- [x] Task 10c: Backtick-fenced code blocks
+- [x] Task 11c: Parent block delimiter length matching
+- [x] Task 11b: Block masquerading (style-driven content model)
+- [ ] Task 14: Inline parser — bold, italic, monospace, highlight, attribute references
 - [ ] Task 15: Inline parser — links and cross-references
 - [ ] Task 16: Inline parser — macros, passthroughs, line breaks
 - [ ] Task 17: Parse description lists
@@ -99,205 +98,13 @@ that feedback so it's not forgotten.
 - [ ] Task 28: Parse underline-style section titles
 - [ ] Task 29: Parse explicit ordered list markers
 
----
-
-## Tasks 0–13b: Completed
-
-Details removed to keep context lean. See git history for implementation notes.
-
-Tasks 22b and 22c (checklist and callout lists) were removed — they were duplicates of Tasks 9b and 9c.
+Details of completed tasks have been removed from this plan.
 
 ---
 
-## Task 7b: Attribute references in document header author line
+## Task 14: Inline parser — bold, italic, monospace, highlight, attribute references
 
-The author line in a document header can use an attribute reference (`{attribute}`) instead of a literal name. The header parser must handle this without error.
-
-**Origin:** Seen in RFDs 0250, 0400, 0499, 0567 (gap from RFD corpus audit).
-
-**Syntax:**
-
-```
-:authors: Rain Paharia <rain@oxide.computer>
-
-= RFD 400 Title
-{authors}
-```
-
-**Files:**
-
-- Modify: `src/parse/grammar.ts` — extend header/author-line rule to accept `{attribute}` references
-- Modify: `src/parse/ast-builder.ts` — preserve the raw attribute reference text
-- Modify: `src/printer.ts` — print attribute reference as-is
-- Create: `tests/parser/header-attribute-ref.test.ts`
-
-**Key test cases:**
-
-- Author line is a single `{attribute}` reference
-- Author line is a literal name (existing behavior, regression test)
-- Author line with attribute reference preserves through formatting
-
-**Commit:**
-
-```
-jj describe -m "feat: handle attribute references in header author line"
-jj new
-```
-
----
-
-## Task 10c: Backtick-fenced code blocks
-
-Parse Markdown-style triple-backtick fenced code blocks as an alternative to `----` listing blocks. Normalize to AsciiDoc-native `[source,lang]` + `----` in output.
-
-**Origin:** Seen in RFD 0301 (gap from RFD corpus audit). Also identified in Asciidoctor API audit as `fenced_code` block context.
-
-**Syntax:**
-
-````
-```rust
-fn main() {
-    println!("Hello, world!");
-}
-```
-````
-
-Equivalent to:
-
-```
-[source,rust]
-----
-fn main() {
-    println!("Hello, world!");
-}
-----
-```
-
-**Files:**
-
-- Modify: `src/parse/tokens.ts` — add `FencedCodeOpen` and `FencedCodeClose` token patterns (` ``` ` with optional language hint)
-- Modify: `src/parse/grammar.ts` — add fenced code block rule, producing the same CST shape as listing blocks
-- Modify: `src/parse/ast-builder.ts` — produce `listingBlock` node with language extracted from fence line
-- Modify: `src/printer.ts` — always output as `[source,lang]` + `----` (normalization)
-- Create: `tests/parser/fenced-code.test.ts`
-- Create: `tests/format/fenced-code.test.ts`
-
-**Key test cases:**
-
-- ` ```rust ` with content → parsed as listing block with language "rust"
-- ` ``` ` without language → listing block with no language
-- Formatter normalizes to `[source,rust]` + `----`
-- Fenced block with no language normalizes to bare `----` (no `[source]`)
-- Content preserved exactly (verbatim)
-
-**Commit:**
-
-```
-jj describe -m "feat: parse backtick-fenced code blocks, normalize to ----"
-jj new
-```
-
----
-
-## Task 11c: Parent block delimiter length matching
-
-Parent blocks (example, sidebar, open, quote) use the same token type for open
-and close delimiters. The lexer doesn't enforce that the close delimiter matches
-the open delimiter's length — `=====` (5) would be closed by `====` (4).
-Verbatim blocks already handle this correctly via `makeClosePattern`. Apply the
-same approach to parent blocks.
-
-**Approach:** Split each parent block's single delimiter token into separate
-open/close tokens. The close token uses a `makeClosePattern` custom matcher to
-ensure length matches the most recent open. This also eliminates the `GATE` hack
-in `parentBlockRule` — with distinct open/close token types, the grammar
-naturally distinguishes them.
-
-**Why not lexer modes?** Parent block content is recursive AsciiDoc, so a mode
-would need all `default_mode` tokens plus the close token. And since the same
-character sequence (`====`) serves as both open (for nesting) and close, the
-lexer can't disambiguate by mode alone — token priority would force one
-interpretation. The `makeClosePattern` approach solves length matching without
-mode overhead.
-
-**Files:**
-
-- Modify: `src/parse/tokens.ts` — split `ExampleBlockDelimiter` into `ExampleBlockOpen` / `ExampleBlockClose` (using `makeClosePattern`); same for `SidebarBlockDelimiter`, `QuoteBlockDelimiter`, `OpenBlockDelimiter`
-- Modify: `src/parse/grammar.ts` — update `parentBlockRule` to use distinct open/close tokens, remove the `GATE`
-- Modify: `src/parse/ast-builder.ts` — update CST visitor to use new token names
-- Modify: `src/parse/cst-types.ts` — update CST type definitions if needed
-- Modify: `tests/parser/` — update any tests that reference the old token names
-
-**Key test cases:**
-
-- `=====` (5) opened and closed with `=====` (5) — works
-- `=====` (5) followed by `====` (4) — the 4-char line is NOT the close delimiter (treated as nested or error)
-- Nested parent blocks of the same type with different lengths
-- Existing parent block tests pass (regression)
-
-**Commit:**
-
-```
-jj describe -m "fix: enforce delimiter length matching for parent blocks"
-jj new
-```
-
----
-
-## Task 11b: Block masquerading (style-driven content model)
-
-A style attribute on a delimited block changes its effective content model. This is the most important gap identified in the Asciidoctor API audit — without it, the formatter risks reflowing verbatim content or failing to parse compound content.
-
-**Origin:** Identified in Asciidoctor API audit as the most impactful formatting-correctness gap.
-
-The masquerade table:
-
-| Delimiter        | Default context    | Masquerade styles                                                                                        |
-| ---------------- | ------------------ | -------------------------------------------------------------------------------------------------------- |
-| `--` (open)      | open (compound)    | comment, example, literal, listing, pass, quote, sidebar, source, verse, admonition, abstract, partintro |
-| `----` (listing) | listing (verbatim) | literal, source                                                                                          |
-| `....` (literal) | literal (verbatim) | listing, source                                                                                          |
-| `====` (example) | example (compound) | admonition                                                                                               |
-| `____` (quote)   | quote (compound)   | verse                                                                                                    |
-| `++++` (pass)    | pass (raw)         | stem, latexmath, asciimath                                                                               |
-
-The critical cases for formatting correctness:
-
-- `[verse]` on `____` → verbatim (line breaks preserved, must NOT reflow)
-- `[source]`/`[listing]` on `--` → verbatim (must NOT parse content as AsciiDoc)
-- `[stem]` on `++++` or `____` → raw/verbatim (must NOT reflow)
-- `[NOTE]`/`[TIP]`/etc. on `====` → admonition container (compound, must parse content)
-
-**Files:**
-
-- Modify: `src/parse/grammar.ts` — when parsing a delimited block, check the preceding `blockAttributeList` for style attributes that change content model. Route to leaf-block (verbatim) vs parent-block (compound) parsing accordingly.
-- Modify: `src/parse/ast-builder.ts` — set effective block type based on masquerade style
-- Modify: `src/printer.ts` — print based on effective content model
-- Create: `tests/parser/block-masquerade.test.ts`
-- Create: `tests/format/block-masquerade.test.ts`
-
-**Key test cases:**
-
-- `[verse]` + `____` → verbatim content preserved (not reflowed)
-- `[source,python]` + `--` → verbatim content preserved
-- `[NOTE]` + `====` → content parsed as AsciiDoc (compound)
-- `[stem]` + `++++` → raw content preserved
-- `[stem]` + `____` → raw content preserved (masquerade across delimiter types)
-- Default behavior unchanged when no masquerade style present
-- `[listing]` + `....` → verbatim (literal→listing masquerade)
-
-**Commit:**
-
-```
-jj describe -m "feat: block masquerading — style-driven content model"
-jj new
-```
-
----
-
-## Task 14: Inline parser — bold, italic, monospace, highlight
-
-Parse inline formatting marks within paragraph text: `*bold*`, `_italic_`, `` `mono` ``, `#highlight#` (constrained) and their unconstrained variants `**`, `__`, ` `` `, `##`.
+Parse inline formatting marks within paragraph text: `*bold*`, `_italic_`, `` `mono` ``, `#highlight#` (constrained) and their unconstrained variants `**`, `__`, ` `` `, `##`. Also parse attribute references (`{name}`) as inline tokens — these are preserved verbatim (not resolved).
 
 **Files:**
 
@@ -326,6 +133,11 @@ Parse inline formatting marks within paragraph text: `*bold*`, `_italic_`, `` `m
 - Backslash escapes: `\*not bold*`, `\_not italic_` — escaped marks treated as literal text (gap 14)
 - Role/style attributes on inline formatting: `[red]#styled text#`, `[underline]#text#` (gap 16)
 - `[.role]#text#` — dot-prefixed role attribute on mark formatting, the most common way to apply CSS classes to inline text (gap from RFD corpus audit)
+- Attribute references: `{name}` → attribute reference node, preserved verbatim
+- Attribute reference in paragraph: `See {project-name} for details` → text + attrRef + text
+- Attribute reference as entire paragraph content: `{authors}` → paragraph containing single attrRef
+- Attribute reference in header author line position: preserved without error (formerly Task 7b)
+- Counter attributes: `{counter:name}` and `{counter2:name}` — recognized as attribute references, preserved verbatim
 
 **Step 2: Implement inline token definitions**
 
@@ -345,7 +157,7 @@ Custom token pattern functions for each formatting mark that inspect the precedi
 **Step 5: Update printer, run checks, commit**
 
 ```
-jj describe -m "feat: parse and format inline bold/italic/mono/highlight"
+jj describe -m "feat: parse and format inline bold/italic/mono/highlight/attrefs"
 jj new
 ```
 
@@ -683,52 +495,6 @@ Chevrotain partly for its error recovery but aren't using it.
 
 ```
 jj describe -m "feat: graceful error recovery — never throw on valid AsciiDoc input"
-jj new
-```
-
----
-
-## Task 25: TCK conformance test harness (moved up — TDD baseline)
-
-Build `toASG()` and wire up tests against the official AsciiDoc TCK expected outputs.
-This task runs early, before the remaining feature work, so it serves as a
-project-level TDD baseline: each subsequent task should turn red TCK fixtures green.
-
-**Files:**
-
-- Create: `tests/tck/to-asg.ts`
-- Create: `tests/tck/conformance.test.ts`
-
-**Step 1: Implement `toASG()` for currently-implemented constructs**
-
-Converts our AST → ASG JSON. Initially covers only the constructs we already
-parse (paragraphs, sections, lists, delimited blocks, comments, attribute
-entries, admonitions, breaks). Inline content is emitted as raw text spans
-for now — inline node mapping (bold→span/strong, etc.) will be added in
-Tasks 14-16.
-
-- Strip comments, attribute entries, include/conditional directives
-- Map our node types to ASG names (`paragraph` → `{name: "paragraph", type: "block"}`)
-- Convert `position` to ASG `location` format (`[{line, col}, {line, col}]`)
-
-**Step 2: Write conformance tests**
-
-- TCK fixtures are already vendored in `vendor/`
-- For each `*-input.adoc` / `*-output.json` pair:
-  - Parse the input with our parser
-  - Convert to ASG with `toASG()`
-  - Compare against expected output JSON
-- Fixtures requiring unimplemented constructs (inline formatting, tables,
-  description lists, macros, includes, conditionals) should be catalogued
-  as expected failures (e.g. `it.todo` or `it.fails`) with a comment
-  noting which task will address them
-
-**Step 3: Fix any discrepancies found in already-implemented constructs**
-
-**Step 4: Run all checks, commit**
-
-```
-jj describe -m "feat: TCK conformance test harness (TDD baseline)"
 jj new
 ```
 

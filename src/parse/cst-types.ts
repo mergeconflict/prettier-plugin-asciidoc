@@ -32,6 +32,7 @@ export interface BlockCstChildren {
   orderedList?: CstNode[];
   calloutList?: CstNode[];
   listingBlock?: CstNode[];
+  fencedCodeBlock?: CstNode[];
   literalBlock?: CstNode[];
   passBlock?: CstNode[];
   exampleBlock?: CstNode[];
@@ -100,6 +101,14 @@ export interface ListingBlockCstChildren {
   BlankLine?: IToken[];
 }
 
+export interface FencedCodeBlockCstChildren {
+  FencedCodeOpen?: IToken[];
+  FencedCodeClose?: IToken[];
+  VerbatimContent?: IToken[];
+  Newline?: IToken[];
+  BlankLine?: IToken[];
+}
+
 export interface LiteralBlockCstChildren {
   LiteralBlockOpen?: IToken[];
   LiteralBlockClose?: IToken[];
@@ -120,14 +129,16 @@ export interface PassBlockCstChildren {
 // tokens and recursive block subrules for their content.
 
 export interface ExampleBlockCstChildren {
-  ExampleBlockDelimiter?: IToken[];
+  ExampleBlockOpen?: IToken[];
+  ExampleBlockClose?: IToken[];
   block?: CstNode[];
   Newline?: IToken[];
   BlankLine?: IToken[];
 }
 
 export interface SidebarBlockCstChildren {
-  SidebarBlockDelimiter?: IToken[];
+  SidebarBlockOpen?: IToken[];
+  SidebarBlockClose?: IToken[];
   block?: CstNode[];
   Newline?: IToken[];
   BlankLine?: IToken[];
@@ -141,7 +152,8 @@ export interface OpenBlockCstChildren {
 }
 
 export interface QuoteBlockCstChildren {
-  QuoteBlockDelimiter?: IToken[];
+  QuoteBlockOpen?: IToken[];
+  QuoteBlockClose?: IToken[];
   block?: CstNode[];
   Newline?: IToken[];
   BlankLine?: IToken[];

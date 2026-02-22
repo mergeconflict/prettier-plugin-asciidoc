@@ -22,7 +22,7 @@ Body starts here after the first blank line.
 
 The header is everything from the document title through the last attribute entry before the first blank line. All header lines must be contiguous — no blank lines allowed within the header.
 
-The author line can use an attribute reference instead of a literal name:
+The author line can be an attribute reference instead of a literal name:
 
 ```
 :authors: Rain Paharia <rain@oxide.computer>
@@ -31,7 +31,9 @@ The author line can use an attribute reference instead of a literal name:
 {authors}
 ```
 
-The header parser must handle `{attribute}` references in the author position, or at minimum preserve them without error.
+This is standard attribute substitution — `{authors}` is an inline
+attribute reference that happens to be the only content on the line.
+The header parser must handle this without error.
 
 ## Sections
 
@@ -892,7 +894,27 @@ A formatter must preserve these literally — do NOT evaluate them.
   continued on next line       ← line continuation with \
 ```
 
-Attribute references in text: `{attribute-name}`.
+### Attribute references
+
+Attribute references substitute the value of a document attribute inline:
+
+```
+:project: My Project
+:version: 2.0
+
+Welcome to {project} version {version}.
+```
+
+The syntax is `{attribute-name}`. References can appear anywhere inline
+content is allowed — paragraphs, headings, list items, block titles,
+attribute values, and even the author line position in a document
+header.
+
+Counter attributes auto-increment: `{counter:name}` (display value),
+`{counter2:name}` (increment without display).
+
+A formatter preserves attribute references verbatim — it does not
+resolve them to their values.
 
 ## Comments
 

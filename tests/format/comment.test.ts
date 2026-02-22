@@ -113,4 +113,14 @@ describe("block comment formatting", () => {
     const expected = "Before.\n\n////\nhidden\n////\n\nAfter.\n";
     expect(await formatAdoc(input)).toBe(expected);
   });
+
+  // Regression: whitespace-only content in a block comment is
+  // dropped. Prettier trims trailing whitespace, so "     "
+  // would become a blank line that re-parses differently.
+  test("whitespace-only content treated as empty", async () => {
+    const input = "_____\n****\n/////\n     ";
+    expect(await formatAdoc(input)).toBe(
+      "____\n****\n////\n////\n****\n____\n",
+    );
+  });
 });

@@ -37,9 +37,10 @@ import {
   MIN_DELIMITER_LENGTH,
   SAFE_DELIMITER_PAD,
 } from "./constants.js";
+import { wordsToFillParts } from "./reflow.js";
 
 const {
-  builders: { align, fill, hardline, join, line },
+  builders: { align, fill, hardline, join },
 } = doc;
 // Index of the second child in a block array. Also serves as
 // the loop increment in joinBlocks — both uses mean "one step
@@ -137,7 +138,10 @@ function printComment(node: {
     return "//";
   }
   // Block comment: delimiters on their own lines, content verbatim.
-  if (node.value.length > EMPTY) {
+  // Use trim() to detect whitespace-only content: Prettier strips
+  // trailing whitespace per line, so "     " would become a blank
+  // line that re-parses as an empty comment, breaking idempotency.
+  if (node.value.trim().length > EMPTY) {
     const contentLines = node.value.split("\n");
     return ["////", hardline, join(hardline, contentLines), hardline, "////"];
   }
@@ -158,6 +162,24 @@ const DELIMITER_CHARS: Record<LeafBlockVariant, string> = {
   listing: "-",
   literal: ".",
   pass: "+",
+};
+
+// Fallback delimiter chars for variants that are naturally
+// associated with parent-block delimiters (verse/quote → `_`,
+// example → `=`, sidebar → `*`). Used by
+// computeMasqueradeDelimiter when no explicit sourceDelimiter
+// is present on the node — e.g. a verse block that was parsed
+// directly rather than masqueraded from a parent block.
+type MasqueradedVariant = "verse" | "example" | "sidebar" | "quote";
+// Only `verse` is currently reachable (via paragraph-form
+// verse blocks). The other entries (`quote`, `example`,
+// `sidebar`) are present for future completeness — they'll
+// be reached once the parser supports those masquerade paths.
+const MASQUERADE_DELIMITER_CHARS: Record<MasqueradedVariant, string> = {
+  verse: "_",
+  quote: "_",
+  example: "=",
+  sidebar: "*",
 };
 
 // Computes the shortest delimiter that won't conflict with
@@ -188,6 +210,32 @@ function computeDelimiter(content: string, delimChar: string): string {
   return delimChar.repeat(length);
 }
 
+// Resolves the correct delimiter string for a delimited block,
+// accounting for masquerading. Three cases:
+//
+// 1. sourceDelimiter is set → use parent block delimiter chars
+//    (the block was masqueraded from a parent block).
+// 2. Leaf variant (listing/literal/pass) → standard DELIMITER_CHARS.
+// 3. Masquerade variant (verse/quote/example/sidebar) without
+//    sourceDelimiter → use MASQUERADE_DELIMITER_CHARS.
+function computeMasqueradeDelimiter(node: DelimitedBlockNode): string {
+  if (node.sourceDelimiter !== undefined) {
+    const { [node.sourceDelimiter]: parentChar } = PARENT_DELIMITER_CHARS;
+    return node.sourceDelimiter === "open"
+      ? parentChar.repeat(OPEN_BLOCK_DELIMITER_LENGTH)
+      : computeDelimiter(node.content, parentChar);
+  }
+  if (node.variant in DELIMITER_CHARS) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- checked by `in` guard
+    const { [node.variant as LeafBlockVariant]: leafChar } = DELIMITER_CHARS;
+    return computeDelimiter(node.content, leafChar);
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- remaining variants are masqueraded
+  const { [node.variant as MasqueradedVariant]: masqChar } =
+    MASQUERADE_DELIMITER_CHARS;
+  return computeDelimiter(node.content, masqChar);
+}
+
 // Prints a delimited leaf block: delimiter, content lines
 // (verbatim), delimiter. Content is not reflowed — it's
 // preserved exactly. The delimiter length is computed by
@@ -204,16 +252,28 @@ function printDelimitedBlock(node: DelimitedBlockNode): Doc {
     return join(hardline, contentLines);
   }
 
-  // After the early return above, only delimited-form leaf blocks
-  // remain (listing, literal, pass). TypeScript needs the assertion
-  // because it can't narrow via the `form` check.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- narrowed by form check above
-  const variant = node.variant as LeafBlockVariant;
-  const { [variant]: delimChar } = DELIMITER_CHARS;
-  const delimiter = computeDelimiter(node.content, delimChar);
-  if (node.content.length > EMPTY) {
+  // Determine the delimiter character and compute its length.
+  // When a block was masqueraded (e.g. [source] on open block
+  // `--`), the sourceDelimiter tells us which parent block
+  // delimiter to use instead of the variant's default.
+  const delimiter = computeMasqueradeDelimiter(node);
+
+  // When a fenced code block had a language hint, emit a
+  // [source,lang] attribute list before the delimiter to
+  // normalize to AsciiDoc-native syntax.
+  const prefix: Doc[] =
+    node.language === undefined
+      ? []
+      : ["[source,", node.language, "]", hardline];
+
+  // Use trim() to detect whitespace-only content: Prettier strips
+  // trailing whitespace per line, so all-whitespace content would
+  // become blank lines that re-parse as an empty block, breaking
+  // idempotency.
+  if (node.content.trim().length > EMPTY) {
     const contentLines = node.content.split("\n");
     return [
+      ...prefix,
       delimiter,
       hardline,
       join(hardline, contentLines),
@@ -221,7 +281,7 @@ function printDelimitedBlock(node: DelimitedBlockNode): Doc {
       delimiter,
     ];
   }
-  return [delimiter, hardline, delimiter];
+  return [...prefix, delimiter, hardline, delimiter];
 }
 
 // Maps each parent block variant to its delimiter character and
@@ -236,20 +296,91 @@ const PARENT_DELIMITER_CHARS: Record<ParentBlockNode["variant"], string> = {
 // Open block delimiter is always exactly 2 dashes.
 const OPEN_BLOCK_DELIMITER_LENGTH = 2;
 
-// Prints a delimited parent block: delimiter, children
-// (formatted blocks), delimiter. Children are joined with
-// blank line separators using the same joinBlocks logic as
-// the document level.
+// Recursively finds the maximum delimiter length used by any
+// descendant parent block with the given variant. Searches
+// through ALL children — not just same-variant — because a
+// quote block inside a sidebar inside a quote still produces
+// `____` delimiters within the outer quote's formatted output.
+function maxDescendantDelimiter(
+  variant: ParentBlockNode["variant"],
+  children: readonly BlockNode[],
+): number {
+  let max = EMPTY;
+  for (const child of children) {
+    if (child.type === "parentBlock") {
+      // Recurse into all parent block children regardless of
+      // variant — same-variant blocks might be nested deeper.
+      const childInner = maxDescendantDelimiter(variant, child.children);
+      if (child.variant === variant) {
+        // This child uses the same delimiter character. Its own
+        // length is at least MIN_DELIMITER_LENGTH plus whatever
+        // its own nesting requires.
+        const childLength = Math.max(
+          MIN_DELIMITER_LENGTH,
+          childInner + SAFE_DELIMITER_PAD,
+        );
+        max = Math.max(max, childLength);
+      } else {
+        // Different variant — propagate inner max unchanged.
+        max = Math.max(max, childInner);
+      }
+    } else if (
+      // Delimited-form admonitions produce parent block delimiters
+      // and must be included in the nesting computation.
+      child.type === "admonition" &&
+      child.form === "delimited" &&
+      child.delimiter !== undefined
+    ) {
+      const childInner = maxDescendantDelimiter(variant, child.children);
+      if (child.delimiter === variant) {
+        const childLength = Math.max(
+          MIN_DELIMITER_LENGTH,
+          childInner + SAFE_DELIMITER_PAD,
+        );
+        max = Math.max(max, childLength);
+      } else {
+        max = Math.max(max, childInner);
+      }
+    }
+  }
+  return max;
+}
+
 function printParentBlock(
   node: ParentBlockNode,
   path: PrintPath,
   print: PrintFunction,
 ): Doc {
   const { [node.variant]: delimChar } = PARENT_DELIMITER_CHARS;
-  const delimLength =
-    node.variant === "open"
-      ? OPEN_BLOCK_DELIMITER_LENGTH
-      : MIN_DELIMITER_LENGTH;
+
+  // Open blocks are always exactly 2 dashes — no nesting
+  // concerns because there's only one possible length.
+  if (node.variant === "open") {
+    const delimiter = delimChar.repeat(OPEN_BLOCK_DELIMITER_LENGTH);
+    if (node.children.length > EMPTY) {
+      // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
+      const children = path.map(print, "children");
+      return [
+        delimiter,
+        hardline,
+        joinBlocks(node.children, children),
+        hardline,
+        delimiter,
+      ];
+    }
+    return [delimiter, hardline, delimiter];
+  }
+
+  // For parent blocks that support variable-length delimiters,
+  // ensure the outer delimiter is longer than any same-type
+  // nested child. Without this, nested same-type blocks would
+  // all normalize to MIN_DELIMITER_LENGTH and lose their
+  // nesting structure on re-parse.
+  const innerMax = maxDescendantDelimiter(node.variant, node.children);
+  const delimLength = Math.max(
+    MIN_DELIMITER_LENGTH,
+    innerMax + SAFE_DELIMITER_PAD,
+  );
   const delimiter = delimChar.repeat(delimLength);
 
   if (node.children.length > EMPTY) {
@@ -287,16 +418,12 @@ function printAdmonition(
     }
     // Reflow the content into fill() the same way paragraphs
     // do. Split on whitespace, interleave with line breaks.
+    // wordsToFillParts handles block-syntax-at-line-start
+    // prevention (see its doc comment).
     const words = node.content
       .split(/\s+/v)
       .filter((word) => word.length > EMPTY);
-    const parts: Doc[] = [];
-    for (const [index, word] of words.entries()) {
-      if (index > EMPTY) {
-        parts.push(line);
-      }
-      parts.push(word);
-    }
+    const parts = wordsToFillParts(words);
     // No align() here: leading spaces in AsciiDoc denote an
     // indented literal block, so continuation lines must start
     // at column 0 to preserve document semantics.
@@ -308,10 +435,19 @@ function printAdmonition(
   // open `--`).
   const delimVariant = node.delimiter ?? "example";
   const { [delimVariant]: delimChar } = PARENT_DELIMITER_CHARS;
+  // For non-open delimiters, ensure the admonition's delimiter is
+  // longer than any same-variant nested block — same logic as
+  // printParentBlock. Without this, a delimited admonition
+  // wrapping a same-variant parent block would produce matching
+  // delimiter lengths, collapsing the nesting on re-parse.
   const delimLength =
     delimVariant === "open"
       ? OPEN_BLOCK_DELIMITER_LENGTH
-      : MIN_DELIMITER_LENGTH;
+      : Math.max(
+          MIN_DELIMITER_LENGTH,
+          maxDescendantDelimiter(delimVariant, node.children) +
+            SAFE_DELIMITER_PAD,
+        );
   const delimiter = delimChar.repeat(delimLength);
 
   if (node.children.length > EMPTY) {
@@ -526,21 +662,17 @@ const printer: Printer<AnyNode> = {
         return printListItem(node, path, print);
       }
       case "text": {
-        // Split into words and interleave with `line` so the
-        // enclosing fill() can decide where to break. Existing
-        // newlines in the source are treated as word separators
-        // (reflow), not preserved.
+        // Split into words; wordsToFillParts interleaves with
+        // `line` so the enclosing fill() can decide where to
+        // break. Existing newlines in the source are treated as
+        // word separators (reflow), not preserved. Words that
+        // would become block syntax at line start are glued to
+        // their predecessor to prevent reflow from altering the
+        // document's AST.
         const words = node.value
           .split(/\s+/v)
           .filter((word) => word.length > EMPTY);
-        const parts: Doc[] = [];
-        for (const [index, word] of words.entries()) {
-          if (index > EMPTY) {
-            parts.push(line);
-          }
-          parts.push(word);
-        }
-        return parts;
+        return wordsToFillParts(words);
       }
     }
   },

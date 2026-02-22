@@ -140,4 +140,19 @@ describe("nested parent block formatting", () => {
     const input = "====\n----\ncode\n----\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
+
+  // Nested same-type blocks: outer delimiter must be longer
+  // than inner to preserve nesting on re-parse.
+  test("nested same-type example blocks", async () => {
+    const input = "======\n====\nNested content.\n====\n======\n";
+    const expected = "=====\n====\nNested content.\n====\n=====\n";
+    expect(await formatAdoc(input)).toBe(expected);
+  });
+
+  // Nested same-type blocks already at minimum length.
+  test("nested same-type quote blocks normalized", async () => {
+    const input = "______\n____\nInner text.\n____\n______\n";
+    const expected = "_____\n____\nInner text.\n____\n_____\n";
+    expect(await formatAdoc(input)).toBe(expected);
+  });
 });

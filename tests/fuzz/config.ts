@@ -6,7 +6,16 @@
  * See https://fast-check.dev/docs/advanced/fuzzing/
  */
 
-// Infinite runs when fuzzing, caller-specified default for CI.
-export function numberOfRuns(ciDefault: number): number {
-  return process.env.FUZZ === undefined ? ciDefault : Number.POSITIVE_INFINITY;
+import type { Parameters } from "fast-check";
+
+const FUZZING = process.env.FUZZ !== undefined;
+
+// Infinite runs + stop-on-failure when fuzzing,
+// caller-specified run count for CI.
+export function fuzzParameters<T>(parameters: Parameters<T>): Parameters<T> {
+  return {
+    ...parameters,
+    numRuns: FUZZING ? Number.POSITIVE_INFINITY : parameters.numRuns,
+    endOnFailure: FUZZING,
+  };
 }

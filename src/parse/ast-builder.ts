@@ -52,6 +52,7 @@ import {
   FIRST_COLUMN,
   FIRST_LINE,
   LAST_ELEMENT,
+  NEXT,
 } from "../constants.js";
 import { unreachable } from "../unreachable.js";
 import { buildTokenBlock } from "./token-builders.js";
@@ -79,6 +80,7 @@ import type {
   SidebarBlockCstChildren,
   OpenBlockCstChildren,
   QuoteBlockCstChildren,
+  FencedCodeBlockCstChildren,
   LiteralParagraphCstChildren,
   AdmonitionParagraphCstChildren,
   AttributeEntryCstChildren,
@@ -143,7 +145,10 @@ export class AstBuilder extends BaseCstVisitor {
     // Convert paragraph-form blocks (e.g. [source] + paragraph →
     // DelimitedBlockNode with form: "paragraph") before section
     // nesting so they work correctly inside sections.
-    const withParagraphForms = convertParagraphFormBlocks(flatBlocks);
+    const withParagraphForms = convertParagraphFormBlocks(
+      flatBlocks,
+      sourceText,
+    );
 
     // Convert [discrete] + section pairs to DiscreteHeadingNode
     // before nesting, so they aren't used as nesting targets.
@@ -383,6 +388,35 @@ export class AstBuilder extends BaseCstVisitor {
     );
   }
 
+  /**
+   * Builds a listing block from a Markdown-style fenced code
+   * block. Extracts the optional language hint from the open
+   * fence token image (e.g. "rust" from `` ```rust ``).
+   */
+  fencedCodeBlock(
+    context: FencedCodeBlockCstChildren,
+    sourceText: string,
+  ): DelimitedBlockNode {
+    const node = buildDelimitedBlock(
+      context.FencedCodeOpen,
+      context.FencedCodeClose,
+      "listing",
+      sourceText,
+    );
+
+    // Extract language from the open fence: "```rust" → "rust".
+    // The token image is the full matched text including the
+    // backticks. Everything after the 3 backticks is the hint.
+    const BACKTICK_COUNT = 3;
+    const openImage = context.FencedCodeOpen?.[FIRST]?.image ?? "";
+    const lang = openImage.slice(BACKTICK_COUNT).trim();
+    if (lang.length > EMPTY) {
+      node.language = lang;
+    }
+
+    return node;
+  }
+
   /** Builds a literal block from its delimiters and source text. */
   literalBlock(
     context: LiteralBlockCstChildren,
@@ -421,10 +455,10 @@ export class AstBuilder extends BaseCstVisitor {
       (cst) => this.visit(cst, sourceText) as BlockNode,
     );
     return buildParentBlock(
-      context.ExampleBlockDelimiter,
+      context.ExampleBlockOpen,
+      context.ExampleBlockClose,
       "example",
       children,
-      sourceText,
     );
   }
 
@@ -441,10 +475,10 @@ export class AstBuilder extends BaseCstVisitor {
       (cst) => this.visit(cst, sourceText) as BlockNode,
     );
     return buildParentBlock(
-      context.SidebarBlockDelimiter,
+      context.SidebarBlockOpen,
+      context.SidebarBlockClose,
       "sidebar",
       children,
-      sourceText,
     );
   }
 
@@ -460,11 +494,15 @@ export class AstBuilder extends BaseCstVisitor {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Chevrotain visitor returns unknown
       (cst) => this.visit(cst, sourceText) as BlockNode,
     );
+    // Open blocks use a single token type for both open and
+    // close. The CST array has open at [0] and close at [1].
+    // Split into separate arrays for buildParentBlock.
+    const delimiters = context.OpenBlockDelimiter ?? [];
     return buildParentBlock(
-      context.OpenBlockDelimiter,
+      delimiters.slice(FIRST, NEXT),
+      delimiters.slice(NEXT),
       "open",
       children,
-      sourceText,
     );
   }
 
@@ -481,10 +519,10 @@ export class AstBuilder extends BaseCstVisitor {
       (cst) => this.visit(cst, sourceText) as BlockNode,
     );
     return buildParentBlock(
-      context.QuoteBlockDelimiter,
+      context.QuoteBlockOpen,
+      context.QuoteBlockClose,
       "quote",
       children,
-      sourceText,
     );
   }
 

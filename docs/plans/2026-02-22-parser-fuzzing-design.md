@@ -47,9 +47,9 @@ lines shuffled together. This stresses:
 | `ListingBlockOpen`      | `-{4,8}`                              |
 | `LiteralBlockOpen`      | `.{4,8}`                              |
 | `PassBlockOpen`         | `+{4,8}`                              |
-| `ExampleBlockDelimiter` | `={4,8}`                              |
-| `SidebarBlockDelimiter` | `*{4,8}`                              |
-| `QuoteBlockDelimiter`   | `_{4,8}`                              |
+| `ExampleBlockOpen`      | `={4,8}`                              |
+| `SidebarBlockOpen`      | `*{4,8}`                              |
+| `QuoteBlockOpen`        | `_{4,8}`                              |
 | `OpenBlockDelimiter`    | `--`                                  |
 | `BlockCommentDelimiter` | `/{4,8}`                              |
 | `LineComment`           | `// ` + random string                 |

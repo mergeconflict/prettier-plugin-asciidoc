@@ -80,6 +80,23 @@ describe("literal block formatting", () => {
     const expected = ".....\n....\nstill inside\n.....\n";
     expect(await formatAdoc(input)).toBe(expected);
   });
+
+  // Regression: content inside a literal block that is entirely
+  // whitespace is dropped — Prettier trims trailing whitespace
+  // per line, so whitespace-only content would become blank
+  // lines that re-parse as an empty block.
+  test("whitespace-only content treated as empty", async () => {
+    const input = "========\n....\n      ";
+    expect(await formatAdoc(input)).toBe("====\n....\n....\n====\n");
+  });
+
+  // Regression: a close delimiter that is a prefix of a content
+  // line must not match. `....x` inside a `....`-delimited
+  // literal block should stay as content, not split the block.
+  test("close delimiter requires full line match", async () => {
+    const input = ".....\n....x\n";
+    expect(await formatAdoc(input)).toBe("....\n....x\n\n....\n");
+  });
 });
 
 describe("passthrough block formatting", () => {

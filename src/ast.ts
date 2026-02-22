@@ -158,15 +158,17 @@ export interface ListNode extends Node {
 /**
  * A delimited leaf block whose content is preserved verbatim
  * (no inline parsing). Covers listing (`----`), literal (`....`),
- * and passthrough (`++++`) blocks.
+ * passthrough (`++++`), and verse blocks.
  *
  * **Valid variant+form combinations:**
  * - `listing | literal | pass` with `form: "delimited"` — fenced
  * - `literal` with `form: "indented"` — literal paragraph
+ * - `verse` with `form: "delimited"` — masqueraded from quote
  * - any variant with `form: "paragraph"` — attribute + paragraph
  *
  * Parent-block variants (`example | sidebar | quote`) use
- * `ParentBlockNode` when delimited, not this type.
+ * `ParentBlockNode` when delimited, not this type — unless
+ * masqueraded to verbatim via a style attribute.
  */
 export interface DelimitedBlockNode extends Node {
   type: "delimitedBlock";
@@ -184,6 +186,23 @@ export interface DelimitedBlockNode extends Node {
    */
   form: "delimited" | "indented" | "paragraph";
   content: string;
+  /**
+   * Source language hint from a Markdown-style fenced code
+   * block (e.g. "rust" from `` ```rust ``). Only present when
+   * the block originated from fenced code syntax with a
+   * language specified. The printer uses this to emit a
+   * `[source,lang]` attribute list during normalization.
+   */
+  language?: string;
+  /**
+   * Original parent block delimiter variant when this block
+   * was created by masquerading. For example, `[source]` on
+   * an open block (`--`) produces a listing variant with
+   * `sourceDelimiter: "open"` so the printer emits `--`
+   * delimiters instead of `----`. Undefined for blocks that
+   * were not masqueraded.
+   */
+  sourceDelimiter?: ParentBlockNode["variant"];
 }
 
 /** A parent block contains structured child blocks (parsed recursively). */

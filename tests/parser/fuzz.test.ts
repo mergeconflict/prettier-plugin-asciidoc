@@ -2,7 +2,7 @@ import { describe, test, expect } from "vitest";
 import fc from "fast-check";
 import { parse } from "../../src/parser.js";
 import { randomInput, adocDocument } from "../fuzz/arbitraries.js";
-import { numberOfRuns } from "../fuzz/config.js";
+import { fuzzParameters } from "../fuzz/config.js";
 
 // Property-based fuzz tests for the parser. These complement
 // the hand-written error recovery tests in error-recovery.test.ts
@@ -16,7 +16,7 @@ describe("parser fuzz", () => {
         const result = parse(input);
         expect(result.type).toBe("document");
       }),
-      { numRuns: numberOfRuns(1000) },
+      fuzzParameters({ numRuns: 1000 }),
     );
   });
 
@@ -26,7 +26,7 @@ describe("parser fuzz", () => {
         const result = parse(input);
         expect(result.type).toBe("document");
       }),
-      { numRuns: numberOfRuns(1000) },
+      fuzzParameters({ numRuns: 1000 }),
     );
   });
 });

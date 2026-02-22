@@ -26,7 +26,7 @@ import type {
   CustomPatternMatcherReturn,
   IToken,
 } from "chevrotain";
-import { EMPTY, MIN_DELIMITER_LENGTH } from "../constants.js";
+import { EMPTY, MIN_DELIMITER_LENGTH, NEXT } from "../constants.js";
 
 /**
  * One or more empty/whitespace-only lines. Matches a newline
@@ -110,28 +110,44 @@ export const PassBlockOpen = createToken({
 });
 
 /**
- * Example block delimiter: 4+ equals signs on their own line.
- * Parent blocks stay in default mode (no push_mode) because
- * their content is parsed recursively using normal grammar rules.
+ * Markdown-style fenced code block opener: three backticks with
+ * an optional language hint (e.g. `` ```rust ``). Pushes into
+ * fenced_code_verbatim mode. The language hint (everything after
+ * the backticks to end of line) is captured in the token image
+ * for the AST builder to extract.
+ */
+export const FencedCodeOpen = createToken({
+  name: "FencedCodeOpen",
+  pattern: /```[^\n]*/,
+  push_mode: "fenced_code_verbatim",
+});
+
+/**
+ * Example block open delimiter: 4+ equals signs on their own
+ * line. Parent blocks stay in default mode (no push_mode)
+ * because their content is parsed recursively using normal
+ * grammar rules. The matching ExampleBlockClose token enforces
+ * that the close delimiter has the same length as this open.
  *
  * Negative lookahead prevents matching when followed by a space
  * or more equals signs — those are section headings handled by
  * SectionMarker (`={2,6} text`). A bare `====` (no space, no
- * trailing text) is the example block delimiter.
+ * trailing text) is the example block open delimiter.
  */
-export const ExampleBlockDelimiter = createToken({
-  name: "ExampleBlockDelimiter",
+export const ExampleBlockOpen = createToken({
+  name: "ExampleBlockOpen",
   pattern: /={4,}(?![= ])/,
 });
 
 /**
- * Sidebar block delimiter: 4+ asterisks on their own line.
- * No conflict with UnorderedListMarker (`*{1,5} `) because
- * the list marker requires a trailing space; a delimiter is
- * just `****` alone. Parent block — stays in default mode.
+ * Sidebar block open delimiter: 4+ asterisks on their own line.
+ * No conflict with UnorderedListMarker (`*{1,5} `) because the
+ * list marker requires a trailing space; a delimiter is just
+ * `****` alone. The matching SidebarBlockClose token enforces
+ * length matching. Parent block -- stays in default mode.
  */
-export const SidebarBlockDelimiter = createToken({
-  name: "SidebarBlockDelimiter",
+export const SidebarBlockOpen = createToken({
+  name: "SidebarBlockOpen",
   // Negative lookahead prevents matching when followed by a
   // space — `**** text` is an unordered list marker at depth 4,
   // not a sidebar delimiter. Also rejects more asterisks after
@@ -157,13 +173,42 @@ export const OpenBlockDelimiter = createToken({
 });
 
 /**
- * Quote block delimiter: 4+ underscores on their own line.
- * No conflict with existing tokens. Parent block — stays in
+ * Quote block open delimiter: 4+ underscores on their own line.
+ * No conflict with existing tokens. The matching QuoteBlockClose
+ * token enforces length matching. Parent block -- stays in
  * default mode.
  */
-export const QuoteBlockDelimiter = createToken({
-  name: "QuoteBlockDelimiter",
-  pattern: /_{4,}/,
+export const QuoteBlockOpen = createToken({
+  name: "QuoteBlockOpen",
+  pattern: /_{4,}(?![^\n])/,
+});
+
+// -- Parent block close tokens --
+// Close tokens use makeClosePattern to enforce that the close
+// delimiter is exactly the same length as the most recent open
+// of the same type. Unlike leaf block close tokens, these stay
+// in default_mode (parent blocks contain recursive AsciiDoc).
+// No push_mode/pop_mode needed.
+
+export const ExampleBlockClose = createToken({
+  name: "ExampleBlockClose",
+  pattern: makeParentClosePattern("=", "ExampleBlockOpen", "ExampleBlockClose"),
+  line_breaks: false,
+  start_chars_hint: ["="],
+});
+
+export const SidebarBlockClose = createToken({
+  name: "SidebarBlockClose",
+  pattern: makeParentClosePattern("*", "SidebarBlockOpen", "SidebarBlockClose"),
+  line_breaks: false,
+  start_chars_hint: ["*"],
+});
+
+export const QuoteBlockClose = createToken({
+  name: "QuoteBlockClose",
+  pattern: makeParentClosePattern("_", "QuoteBlockOpen", "QuoteBlockClose"),
+  line_breaks: false,
+  start_chars_hint: ["_"],
 });
 
 /**
@@ -286,6 +331,65 @@ function makeClosePattern(
   };
 }
 
+// Parent block close matcher. Unlike leaf blocks (which can't
+// nest), parent blocks of the same type can nest with different
+// delimiter lengths (e.g., outer `======`, inner `====`). The
+// matcher must find the most recent *unmatched* open token --
+// skipping opens that already have a matching close -- to get
+// the correct delimiter length for comparison.
+function makeParentClosePattern(
+  delimiterChar: string,
+  openTokenName: string,
+  closeTokenName: string,
+): { exec: CustomPatternMatcherFunc } {
+  const regex = new RegExp(
+    `\\${delimiterChar}{${MIN_DELIMITER_LENGTH},}(?![^\\n])`,
+  );
+
+  return {
+    exec: (
+      text: string,
+      offset: number,
+      tokens: IToken[],
+      _groups: Record<string, IToken[]>,
+    ): CustomPatternMatcherReturn | null => {
+      const match = regex.exec(text.slice(offset));
+      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
+      if (match?.index !== EMPTY) return null;
+
+      // Walk backwards through all previously lexed tokens.
+      // Track nesting: each close we encounter means one more
+      // open we need to skip before finding our target open.
+      let depth = EMPTY;
+      let openLength = EMPTY;
+      for (let index = tokens.length - NEXT; index >= EMPTY; index -= NEXT) {
+        // eslint-disable-next-line @typescript-eslint/prefer-destructuring -- variable index
+        const {
+          tokenType: { name: tokenName },
+          image,
+        } = tokens[index];
+        if (tokenName === closeTokenName) {
+          depth += NEXT;
+        } else if (tokenName === openTokenName) {
+          if (depth === EMPTY) {
+            // This open has no matching close -- it's ours.
+            ({ length: openLength } = image);
+            break;
+          }
+          depth -= NEXT;
+        }
+      }
+
+      const [matched] = match;
+      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
+      if (matched.length !== openLength) return null;
+
+      const result: CustomPatternMatcherReturn = [matched];
+      return result;
+    },
+  };
+}
+
 /**
  * Closing delimiter for listing blocks inside listing_verbatim
  * mode. Pops back to default mode. Uses a custom pattern to
@@ -323,6 +427,20 @@ export const PassBlockClose = createToken({
   pop_mode: true,
   line_breaks: false,
   start_chars_hint: ["+"],
+});
+
+// Fenced code block close: exactly three backticks on their own
+// line. Unlike listing/literal/pass blocks, the close delimiter
+// is always exactly 3 backticks (it doesn't need to match the
+// open delimiter length, since the open is also always 3).
+// The negative lookahead (?![^\n]) ensures the backticks are
+// the entire line content (followed by newline or EOF).
+export const FencedCodeClose = createToken({
+  name: "FencedCodeClose",
+  pattern: /```(?![^\n])/,
+  pop_mode: true,
+  line_breaks: false,
+  start_chars_hint: ["`"],
 });
 
 /**
@@ -513,14 +631,20 @@ const multiModeDefinition = {
       ListingBlockOpen,
       LiteralBlockOpen,
       PassBlockOpen,
-      // Parent block delimiters stay in default mode (recursive
-      // content parsing). Must precede BlockCommentDelimiter and
-      // TextContent. ExampleBlockDelimiter has a negative lookahead
-      // to avoid matching section headings (`==== Title`).
-      ExampleBlockDelimiter,
-      SidebarBlockDelimiter,
+      FencedCodeOpen,
+      // Parent block close tokens BEFORE their corresponding
+      // open tokens. When a delimiter line appears, the close
+      // token's custom matcher checks length against the most
+      // recent open. If it rejects (wrong length), the line
+      // falls through to the open token — creating a nested
+      // block, which is correct AsciiDoc nesting behavior.
+      ExampleBlockClose,
+      ExampleBlockOpen,
+      SidebarBlockClose,
+      SidebarBlockOpen,
       OpenBlockDelimiter,
-      QuoteBlockDelimiter,
+      QuoteBlockClose,
+      QuoteBlockOpen,
       BlockCommentDelimiter,
       LineComment,
       ThematicBreak,
@@ -548,6 +672,12 @@ const multiModeDefinition = {
     listing_verbatim: [BlankLine, Newline, ListingBlockClose, VerbatimContent],
     literal_verbatim: [BlankLine, Newline, LiteralBlockClose, VerbatimContent],
     pass_verbatim: [BlankLine, Newline, PassBlockClose, VerbatimContent],
+    fenced_code_verbatim: [
+      BlankLine,
+      Newline,
+      FencedCodeClose,
+      VerbatimContent,
+    ],
   },
   defaultMode: "default_mode",
 };
@@ -568,10 +698,15 @@ export const allTokens = [
   LiteralBlockClose,
   PassBlockOpen,
   PassBlockClose,
-  ExampleBlockDelimiter,
-  SidebarBlockDelimiter,
+  FencedCodeOpen,
+  FencedCodeClose,
+  ExampleBlockClose,
+  ExampleBlockOpen,
+  SidebarBlockClose,
+  SidebarBlockOpen,
   OpenBlockDelimiter,
-  QuoteBlockDelimiter,
+  QuoteBlockClose,
+  QuoteBlockOpen,
   BlockCommentDelimiter,
   BlockCommentEnd,
   LineComment,

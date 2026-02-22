@@ -32,10 +32,6 @@ import {
   computeEnd,
 } from "./positions.js";
 
-// Index of the second element (close delimiter in a pair of
-// open/close delimiter tokens from the same CST array).
-const SECOND_DELIMITER = 1;
-
 // Checklist marker: `[x] `, `[*] `, or `[ ] ` at the start
 // of an unordered list item's text. Group 1 captures the
 // inner character so we can distinguish checked from unchecked.
@@ -141,27 +137,18 @@ export function buildDelimitedBlock(
  * and recursively visited child block nodes.
  */
 export function buildParentBlock(
-  delimiterTokens: IToken[] | undefined,
+  openTokens: IToken[] | undefined,
+  closeTokens: IToken[] | undefined,
   variant: ParentBlockNode["variant"],
   children: BlockNode[],
-  sourceText: string,
 ): ParentBlockNode {
   // The open delimiter is always present — the grammar can't
   // enter a parent block rule without first matching it.
   const openToken =
-    delimiterTokens?.[FIRST] ??
+    openTokens?.[FIRST] ??
     unreachable("Parent block must have an opening delimiter");
 
-  const closeToken = delimiterTokens?.[SECOND_DELIMITER];
-
-  // When the close delimiter is missing (unclosed block — EOF
-  // arrived before the matching close), use the end of the
-  // source text as the block's end position. This preserves
-  // whatever partial content was parsed instead of crashing.
-  const end =
-    closeToken === undefined
-      ? computeEnd(sourceText)
-      : tokenEndLocation(closeToken);
+  const closeToken = closeTokens?.[FIRST];
 
   return {
     type: "parentBlock",
@@ -169,7 +156,14 @@ export function buildParentBlock(
     children,
     position: {
       start: tokenStartLocation(openToken),
-      end,
+      // When the close delimiter is missing (unclosed block),
+      // use the open token's end as a fallback. The block's
+      // end will be inaccurate, but this preserves whatever
+      // partial content was parsed instead of crashing.
+      end:
+        closeToken === undefined
+          ? tokenEndLocation(openToken)
+          : tokenEndLocation(closeToken),
     },
   };
 }
@@ -255,10 +249,11 @@ function findListSubrule(context: BlockCstChildren): CstNode | undefined {
 }
 
 // Checks for any delimited leaf block subrule type (listing,
-// literal, passthrough) in the block CST.
+// literal, passthrough, fenced code) in the block CST.
 function findLeafBlockSubrule(context: BlockCstChildren): CstNode | undefined {
   return (
     context.listingBlock?.[FIRST] ??
+    context.fencedCodeBlock?.[FIRST] ??
     context.literalBlock?.[FIRST] ??
     context.passBlock?.[FIRST]
   );

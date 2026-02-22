@@ -22,10 +22,13 @@ import {
   BlockCommentDelimiter,
   BlockCommentEnd,
   DocumentTitle,
-  ExampleBlockDelimiter,
+  ExampleBlockClose,
+  ExampleBlockOpen,
   LineComment,
   ThematicBreak,
   PageBreak,
+  FencedCodeClose,
+  FencedCodeOpen,
   ListingBlockClose,
   ListingBlockOpen,
   LiteralBlockClose,
@@ -34,9 +37,11 @@ import {
   OpenBlockDelimiter,
   PassBlockClose,
   PassBlockOpen,
-  QuoteBlockDelimiter,
+  QuoteBlockClose,
+  QuoteBlockOpen,
   SectionMarker,
-  SidebarBlockDelimiter,
+  SidebarBlockClose,
+  SidebarBlockOpen,
   IndentedLine,
   TextContent,
   UnorderedListMarker,
@@ -109,6 +114,7 @@ export class AsciidocParser extends CstParser {
       { ALT: () => this.SUBRULE(this.orderedList) },
       { ALT: () => this.SUBRULE(this.calloutList) },
       { ALT: () => this.SUBRULE(this.listingBlock) },
+      { ALT: () => this.SUBRULE(this.fencedCodeBlock) },
       { ALT: () => this.SUBRULE(this.literalBlock) },
       { ALT: () => this.SUBRULE(this.passBlock) },
       { ALT: () => this.SUBRULE(this.exampleBlock) },
@@ -175,6 +181,17 @@ export class AsciidocParser extends CstParser {
     ListingBlockOpen,
     ListingBlockClose,
   );
+  /**
+   * Markdown-style fenced code block: ` ``` ` delimiters with
+   * optional language hint. Parsed into the same CST shape as
+   * listing blocks so the AST builder can produce identical
+   * nodes.
+   */
+  fencedCodeBlock = this.leafBlockRule(
+    "fencedCodeBlock",
+    FencedCodeOpen,
+    FencedCodeClose,
+  );
   /** Literal block: `....` delimiters with verbatim content. */
   literalBlock = this.leafBlockRule(
     "literalBlock",
@@ -189,19 +206,17 @@ export class AsciidocParser extends CstParser {
   // open delimiter, recursive block content, close delimiter.
   private parentBlockRule(
     name: string,
-    delimiterToken: TokenType,
+    openToken: TokenType,
+    closeToken: TokenType,
   ): ParserMethod<[], CstNode> {
     return this.RULE(name, () => {
-      this.CONSUME(delimiterToken);
-      // GATE prevents the MANY from entering when the next token
-      // is the block's own delimiter — that's the closing
-      // delimiter, not content. Without this, Chevrotain's
-      // lookahead would include the delimiter token (via
-      // block → parentBlock) and enter the loop body, where no
-      // alternative can handle a closing delimiter, causing a
-      // hard parse error.
+      this.CONSUME(openToken);
+      // When open and close are the same token type (open
+      // blocks), the GATE prevents the loop from consuming
+      // the close delimiter. When they differ (example,
+      // sidebar, quote), the GATE is redundant but harmless.
       this.MANY({
-        GATE: () => this.LA(LOOKAHEAD).tokenType !== delimiterToken,
+        GATE: () => this.LA(LOOKAHEAD).tokenType !== closeToken,
         DEF: () => {
           this.OR([
             { ALT: () => this.CONSUME(BlankLine) },
@@ -210,7 +225,10 @@ export class AsciidocParser extends CstParser {
           ]);
         },
       });
-      this.CONSUME2(delimiterToken);
+      // CONSUME2 because when openToken === closeToken (open
+      // blocks), Chevrotain requires numerical suffixes for
+      // the second occurrence of the same token type.
+      this.CONSUME2(closeToken);
       this.OPTION(() => {
         this.CONSUME2(Newline);
       });
@@ -218,13 +236,29 @@ export class AsciidocParser extends CstParser {
   }
 
   /** Example block: `====` delimiters with recursive block content. */
-  exampleBlock = this.parentBlockRule("exampleBlock", ExampleBlockDelimiter);
+  exampleBlock = this.parentBlockRule(
+    "exampleBlock",
+    ExampleBlockOpen,
+    ExampleBlockClose,
+  );
   /** Sidebar block: `****` delimiters with recursive block content. */
-  sidebarBlock = this.parentBlockRule("sidebarBlock", SidebarBlockDelimiter);
+  sidebarBlock = this.parentBlockRule(
+    "sidebarBlock",
+    SidebarBlockOpen,
+    SidebarBlockClose,
+  );
   /** Open block: `--` delimiters with recursive block content. */
-  openBlock = this.parentBlockRule("openBlock", OpenBlockDelimiter);
+  openBlock = this.parentBlockRule(
+    "openBlock",
+    OpenBlockDelimiter,
+    OpenBlockDelimiter,
+  );
   /** Quote block: `____` delimiters with recursive block content. */
-  quoteBlock = this.parentBlockRule("quoteBlock", QuoteBlockDelimiter);
+  quoteBlock = this.parentBlockRule(
+    "quoteBlock",
+    QuoteBlockOpen,
+    QuoteBlockClose,
+  );
 
   /**
    * Literal paragraph: consecutive lines starting with one or

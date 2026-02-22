@@ -179,3 +179,94 @@ describe("parent block context", () => {
     expect(block.children[0].type).toBe("delimitedBlock");
   });
 });
+
+describe("delimiter length matching", () => {
+  // The close delimiter must be exactly the same length as the
+  // open delimiter. A shorter delimiter is NOT the close —
+  // it starts a nested block or becomes content/error recovery.
+  test("example block close must match open length", () => {
+    // Open with 5 `=`, attempt close with 4 `=` — the 4-char
+    // line is not the close delimiter. The `====` starts a
+    // nested (empty) example block inside the unclosed outer.
+    const { children } = parse("=====\nContent.\n====\n====\n");
+    expect(children).toHaveLength(1);
+    const block = firstParentBlock(children);
+    expect(block.variant).toBe("example");
+    // Children: paragraph("Content.") + nested empty example
+    expect(block.children).toHaveLength(2);
+    expect(block.children[0].type).toBe("paragraph");
+    expect(block.children[1].type).toBe("parentBlock");
+  });
+
+  test("sidebar block close must match open length", () => {
+    const { children } = parse("*****\nContent.\n****\n****\n");
+    expect(children).toHaveLength(1);
+    const block = firstParentBlock(children);
+    expect(block.variant).toBe("sidebar");
+    // Children: paragraph("Content.") + nested empty sidebar
+    expect(block.children).toHaveLength(2);
+    expect(block.children[0].type).toBe("paragraph");
+    expect(block.children[1].type).toBe("parentBlock");
+  });
+
+  test("quote block close must match open length", () => {
+    const { children } = parse("_____\nContent.\n____\n____\n");
+    expect(children).toHaveLength(1);
+    const block = firstParentBlock(children);
+    expect(block.variant).toBe("quote");
+    // Children: paragraph("Content.") + nested empty quote
+    expect(block.children).toHaveLength(2);
+    expect(block.children[0].type).toBe("paragraph");
+    expect(block.children[1].type).toBe("parentBlock");
+  });
+
+  // Matching delimiter lengths work as expected.
+  test("matching 5-char example delimiters", () => {
+    const { children } = parse("=====\nContent.\n=====\n");
+    expect(children).toHaveLength(1);
+    const block = firstParentBlock(children);
+    expect(block.variant).toBe("example");
+    expect(block.children).toHaveLength(1);
+    expect(block.children[0].type).toBe("paragraph");
+  });
+
+  test("matching 5-char sidebar delimiters", () => {
+    const { children } = parse("*****\nContent.\n*****\n");
+    expect(children).toHaveLength(1);
+    const block = firstParentBlock(children);
+    expect(block.variant).toBe("sidebar");
+    expect(block.children).toHaveLength(1);
+  });
+
+  test("matching 5-char quote delimiters", () => {
+    const { children } = parse("_____\nContent.\n_____\n");
+    expect(children).toHaveLength(1);
+    const block = firstParentBlock(children);
+    expect(block.variant).toBe("quote");
+    expect(block.children).toHaveLength(1);
+  });
+
+  // Nested same-type blocks with different delimiter lengths.
+  // Outer uses 6-char, inner uses 4-char.
+  test("nested same-type example blocks", () => {
+    const { children } = parse("======\n====\nNested content.\n====\n======\n");
+    expect(children).toHaveLength(1);
+    const outer = firstParentBlock(children);
+    expect(outer.variant).toBe("example");
+    expect(outer.children).toHaveLength(1);
+    const inner = firstParentBlock(outer.children);
+    expect(inner.variant).toBe("example");
+    expect(inner.children).toHaveLength(1);
+    expect(inner.children[0].type).toBe("paragraph");
+  });
+
+  // Open blocks use exactly 2 dashes — no length matching
+  // needed. This test ensures they still work unchanged.
+  test("open blocks are unaffected", () => {
+    const { children } = parse("--\nContent.\n--\n");
+    expect(children).toHaveLength(1);
+    const block = firstParentBlock(children);
+    expect(block.variant).toBe("open");
+    expect(block.children).toHaveLength(1);
+  });
+});

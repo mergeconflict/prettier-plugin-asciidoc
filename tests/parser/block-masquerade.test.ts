@@ -1,0 +1,223 @@
+/**
+ * Parser tests for block masquerading (style-driven content model).
+ *
+ * A style attribute on a delimited block changes its effective
+ * content model. The critical cases for formatting correctness:
+ *
+ * - `[verse]` on `____` → verbatim (line breaks preserved)
+ * - `[source]`/`[listing]`/`[literal]` on `--` → verbatim
+ * - `[stem]`/`[latexmath]`/`[asciimath]` on `____` → verbatim
+ * - `[NOTE]`/`[TIP]` on `====` → admonition (already handled)
+ *
+ * Masquerades that don't change the content model (e.g.
+ * `[source]` on `----`, `[quote]` on `--`) are not tested here
+ * because they don't affect formatting behavior.
+ */
+import { describe, test, expect } from "vitest";
+import { parse } from "../../src/parser.js";
+import type { DelimitedBlockNode, ParentBlockNode } from "../../src/ast.js";
+
+// Helper to extract a delimited block at a given index.
+function delimitedBlockAt(
+  children: ReturnType<typeof parse>["children"],
+  index: number,
+): DelimitedBlockNode {
+  const { [index]: block } = children;
+  if (block.type !== "delimitedBlock") {
+    throw new Error(
+      `Expected delimitedBlock at index ${String(index)}, got ${block.type}`,
+    );
+  }
+  return block;
+}
+
+// Helper to extract a parent block at a given index.
+function parentBlockAt(
+  children: ReturnType<typeof parse>["children"],
+  index: number,
+): ParentBlockNode {
+  const { [index]: block } = children;
+  if (block.type !== "parentBlock") {
+    throw new Error(
+      `Expected parentBlock at index ${String(index)}, got ${block.type}`,
+    );
+  }
+  return block;
+}
+
+describe("[verse] on quote block (____)", () => {
+  test("produces a delimited block with variant verse", () => {
+    const { children } = parse(
+      "[verse]\n____\nRoses are red,\nViolets are blue.\n____\n",
+    );
+    expect(children).toHaveLength(2);
+    expect(children[0].type).toBe("blockAttributeList");
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("verse");
+    expect(block.form).toBe("delimited");
+    expect(block.sourceDelimiter).toBe("quote");
+    expect(block.content).toBe("Roses are red,\nViolets are blue.");
+  });
+
+  test("preserves exact line breaks in verse content", () => {
+    const input = "[verse]\n____\nLine one.\n\nLine three.\n____\n";
+    const { children } = parse(input);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.content).toBe("Line one.\n\nLine three.");
+  });
+
+  test("empty verse block", () => {
+    const { children } = parse("[verse]\n____\n____\n");
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("verse");
+    expect(block.content).toBe("");
+  });
+
+  test("verse with attribution in attribute list", () => {
+    const { children } = parse(
+      "[verse, Carl Sandburg, Fog]\n____\nThe fog comes\non little cat feet.\n____\n",
+    );
+    expect(children).toHaveLength(2);
+    expect(children[0].type).toBe("blockAttributeList");
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("verse");
+    expect(block.content).toBe("The fog comes\non little cat feet.");
+  });
+});
+
+describe("[source]/[listing]/[literal] on open block (--)", () => {
+  test("[source] on open block produces verbatim listing", () => {
+    const { children } = parse("[source]\n--\nputs 'hello'\n--\n");
+    expect(children).toHaveLength(2);
+    expect(children[0].type).toBe("blockAttributeList");
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("listing");
+    expect(block.form).toBe("delimited");
+    expect(block.sourceDelimiter).toBe("open");
+    expect(block.content).toBe("puts 'hello'");
+  });
+
+  test("[source,ruby] on open block preserves language context", () => {
+    const { children } = parse("[source,ruby]\n--\nputs 'hello'\n--\n");
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("listing");
+    expect(block.content).toBe("puts 'hello'");
+  });
+
+  test("[listing] on open block produces verbatim listing", () => {
+    const { children } = parse("[listing]\n--\ndef foo\n  bar\nend\n--\n");
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("listing");
+    expect(block.content).toBe("def foo\n  bar\nend");
+  });
+
+  test("[literal] on open block produces verbatim literal", () => {
+    const { children } = parse("[literal]\n--\nfixed-width text\n--\n");
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("literal");
+    expect(block.content).toBe("fixed-width text");
+  });
+});
+
+describe("[comment]/[pass]/[verse] on open block (--)", () => {
+  test("[pass] on open block produces verbatim pass block", () => {
+    const { children } = parse("[pass]\n--\n<div>raw</div>\n--\n");
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("pass");
+    expect(block.content).toBe("<div>raw</div>");
+  });
+
+  test("[comment] on open block produces verbatim pass block", () => {
+    const { children } = parse("[comment]\n--\nThis is hidden.\n--\n");
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("pass");
+    expect(block.content).toBe("This is hidden.");
+  });
+
+  test("[verse] on open block produces verbatim verse block", () => {
+    const { children } = parse(
+      "[verse]\n--\nRoses are red,\nViolets are blue.\n--\n",
+    );
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("verse");
+    expect(block.content).toBe("Roses are red,\nViolets are blue.");
+  });
+});
+
+describe("[stem]/[latexmath]/[asciimath] on quote block (____)", () => {
+  test("[stem] on quote block produces verbatim block", () => {
+    const { children } = parse("[stem]\n____\nx = y^2\n____\n");
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("pass");
+    expect(block.form).toBe("delimited");
+    expect(block.content).toBe("x = y^2");
+  });
+
+  test("[latexmath] on quote block produces verbatim block", () => {
+    const frac = String.raw`\frac{a}{b}`;
+    const { children } = parse(`[latexmath]\n____\n${frac}\n____\n`);
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("pass");
+    expect(block.content).toBe(frac);
+  });
+
+  test("[asciimath] on quote block produces verbatim block", () => {
+    const { children } = parse("[asciimath]\n____\nsum_(i=1)^n i\n____\n");
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("pass");
+    expect(block.content).toBe("sum_(i=1)^n i");
+  });
+});
+
+describe("default behavior preserved (no masquerade)", () => {
+  test("quote block without style stays as parent block", () => {
+    const { children } = parse("____\nContent.\n____\n");
+    expect(children).toHaveLength(1);
+    const block = parentBlockAt(children, 0);
+    expect(block.variant).toBe("quote");
+  });
+
+  test("open block without style stays as parent block", () => {
+    const { children } = parse("--\nContent.\n--\n");
+    expect(children).toHaveLength(1);
+    const block = parentBlockAt(children, 0);
+    expect(block.variant).toBe("open");
+  });
+
+  test("[#myid] on quote block does NOT masquerade", () => {
+    const { children } = parse("[#myid]\n____\nContent.\n____\n");
+    expect(children).toHaveLength(2);
+    expect(children[0].type).toBe("blockAttributeList");
+    const block = parentBlockAt(children, 1);
+    expect(block.variant).toBe("quote");
+  });
+
+  test("[.role] on open block does NOT masquerade", () => {
+    const { children } = parse("[.role]\n--\nContent.\n--\n");
+    expect(children).toHaveLength(2);
+    expect(children[0].type).toBe("blockAttributeList");
+    const block = parentBlockAt(children, 1);
+    expect(block.variant).toBe("open");
+  });
+});
+
+describe("masquerade with extended delimiters", () => {
+  test("[verse] on extended quote block (______)", () => {
+    const { children } = parse(
+      "[verse]\n______\nLine one.\nLine two.\n______\n",
+    );
+    expect(children).toHaveLength(2);
+    const block = delimitedBlockAt(children, 1);
+    expect(block.variant).toBe("verse");
+    expect(block.content).toBe("Line one.\nLine two.");
+  });
+});
