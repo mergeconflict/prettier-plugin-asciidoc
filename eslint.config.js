@@ -1,12 +1,13 @@
+import { defineConfig } from "eslint/config";
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import love from "eslint-config-love";
 import unicorn from "eslint-plugin-unicorn";
 
-export default tseslint.config(
+export default defineConfig(
   // Global ignores.
   {
-    ignores: ["node_modules/**", "dist/**"],
+    ignores: ["node_modules/**", "dist/**", "build.ts"],
   },
 
   // Base JS recommended rules.

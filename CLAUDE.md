@@ -9,12 +9,12 @@ A Prettier plugin for formatting AsciiDoc (.adoc) files. Custom source-preservin
 ## Commands
 
 ```bash
-npm run check          # TypeScript type checking (tsc --noEmit)
-npm run lint           # ESLint, zero warnings policy (--max-warnings=0)
-npm test               # Vitest
-npm run build          # tsup → dist/ (ESM + DTS)
-npm run vendor         # Re-fetch ASG schema + TCK fixtures into vendor/
-npx vitest run tests/parser/reader.test.ts  # Run a single test file
+bun run check          # TypeScript type checking (tsc --noEmit)
+bun run lint           # ESLint, zero warnings policy (--max-warnings=0)
+bun test               # Vitest
+bun run build          # bun build → dist/ (ESM)
+bun run vendor         # Re-fetch ASG schema + TCK fixtures into vendor/
+bunx vitest run tests/parser/reader.test.ts  # Run a single test file
 ```
 
 All four checks (check, lint, test, build) must pass before considering work done.
@@ -31,7 +31,7 @@ source text → Lexer → Parser → CST → AST Builder → AST → Printer →
 - **AST** (`src/ast.ts`): Designed for Prettier, not the AsciiDoc ASG. Preserves comments, directives, attribute entries, and other constructs the ASG intentionally discards.
 - **Printer** (`src/printer.ts`): Walks AST, produces Prettier Doc IR.
 - **TCK validation** (`tests/tck/`): `toASG()` converts our AST to official ASG format for test-time conformance checks. Dev-only, not shipped.
-- **Vendored deps** (`vendor/`): ASG schema and TCK test fixtures from the asciidoc-lang project. Updated via `npm run vendor`.
+- **Vendored deps** (`vendor/`): ASG schema and TCK test fixtures from the asciidoc-lang project. Updated via `bun run vendor`.
 
 ## Lint rules to know about
 

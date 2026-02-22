@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "types": ["bun-types"],
     "target": "ES2024",
     "module": "ES2022",
     "moduleResolution": "bundler",
@@ -8,16 +9,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "dist"
   },
   "include": [
     "src/**/*.ts",
     "tests/**/*.ts",
+    "build.ts",
     "vitest.config.ts",
-    "tsup.config.ts",
     "eslint.config.js"
   ]
 }
