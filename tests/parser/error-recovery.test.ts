@@ -7,7 +7,7 @@ describe("parser error recovery", () => {
   // the parser should produce a partial AST rather than crash.
 
   // Plain prose with no AsciiDoc constructs should parse as
-  // a simple paragraph — the grammar's TextContent catch-all
+  // a simple paragraph — the grammar's InlineModeStart catch-all
   // handles this. This is the baseline "no crash" case.
   test("plain prose parses without throwing", () => {
     const document = parse("Just some regular text.\n");

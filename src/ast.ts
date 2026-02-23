@@ -54,9 +54,59 @@ export interface TextNode extends Node {
   value: string;
 }
 
+/** Bold inline span: `*text*` (constrained) or `**text**` (unconstrained). */
+export interface BoldNode extends Node {
+  type: "bold";
+  constrained: boolean;
+  children: InlineNode[];
+}
+
+/** Italic inline span: `_text_` (constrained) or `__text__` (unconstrained). */
+export interface ItalicNode extends Node {
+  type: "italic";
+  constrained: boolean;
+  children: InlineNode[];
+}
+
+/** Monospace inline span: `` `text` `` (constrained) or ` `` text `` ` (unconstrained). */
+export interface MonospaceNode extends Node {
+  type: "monospace";
+  constrained: boolean;
+  children: InlineNode[];
+}
+
+/**
+ * Highlight (mark) inline span: `#text#` (constrained) or
+ * `##text##` (unconstrained). Often used with a role attribute
+ * like `[red]#text#` or `[.classname]#text#`.
+ */
+export interface HighlightNode extends Node {
+  type: "highlight";
+  constrained: boolean;
+  /** Role/style attribute from the preceding `[role]` syntax.
+   * Undefined when no role is specified. */
+  role: string | undefined;
+  children: InlineNode[];
+}
+
+/**
+ * An attribute reference: `{name}`. Preserved verbatim in the
+ * AST — the formatter does not resolve attribute values. Also
+ * covers counter attributes like `{counter:name}`.
+ */
+export interface AttributeReferenceNode extends Node {
+  type: "attributeReference";
+  name: string;
+}
+
 /** Content that appears within a paragraph (text, emphasis, links, etc.). */
-// TODO: Will become a union as inline parsing is added.
-export type InlineNode = TextNode;
+export type InlineNode =
+  | TextNode
+  | BoldNode
+  | ItalicNode
+  | MonospaceNode
+  | HighlightNode
+  | AttributeReferenceNode;
 
 /**
  * A section heading and its child blocks. Level is 0-indexed (level 0 = "==",

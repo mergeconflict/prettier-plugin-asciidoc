@@ -27,6 +27,7 @@ import type {
   BlockNode,
   BlockAttributeListNode,
   DelimitedBlockNode,
+  InlineNode,
   ParentBlockNode,
   ParagraphNode,
 } from "../ast.js";
@@ -187,10 +188,44 @@ function extractParentBlockContent(
 
 // Converts the text content of a paragraph node into a
 // verbatim string for the delimited block's content field.
+// Walks all inline children, extracting raw text from text
+// nodes and preserving formatting marks from span nodes.
 function paragraphToContent(paragraph: ParagraphNode): string {
-  // ParagraphNode.children is [TextNode] — the text node's
-  // value already has lines joined by \n from the AST builder.
-  return paragraph.children.map((child) => child.value).join("\n");
+  return paragraph.children.map((child) => inlineToText(child)).join("");
+}
+
+// Extracts the raw source text from an inline node,
+// including any formatting marks for span nodes.
+function inlineToText(node: InlineNode): string {
+  switch (node.type) {
+    case "text": {
+      return node.value;
+    }
+    case "attributeReference": {
+      return `{${node.name}}`;
+    }
+    case "bold": {
+      const mark = node.constrained ? "*" : "**";
+      const inner = node.children.map((child) => inlineToText(child)).join("");
+      return `${mark}${inner}${mark}`;
+    }
+    case "italic": {
+      const mark = node.constrained ? "_" : "__";
+      const inner = node.children.map((child) => inlineToText(child)).join("");
+      return `${mark}${inner}${mark}`;
+    }
+    case "monospace": {
+      const mark = node.constrained ? "`" : "``";
+      const inner = node.children.map((child) => inlineToText(child)).join("");
+      return `${mark}${inner}${mark}`;
+    }
+    case "highlight": {
+      const mark = node.constrained ? "#" : "##";
+      const rolePrefix = node.role === undefined ? "" : `[${node.role}]`;
+      const inner = node.children.map((child) => inlineToText(child)).join("");
+      return `${rolePrefix}${mark}${inner}${mark}`;
+    }
+  }
 }
 
 /**

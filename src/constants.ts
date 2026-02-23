@@ -36,6 +36,10 @@ export const MIN_DELIMITER_LENGTH = 4;
 // next token. Used in GATE functions to check what comes next.
 export const LOOKAHEAD = 1;
 
+// Two-token lookahead for GATEs that need to peek past the
+// current token (e.g. checking what follows a Newline).
+export const LOOKAHEAD_2 = 2;
+
 // When a delimited block's content contains a line that looks
 // like a delimiter, the output delimiter must be this many
 // characters longer than the conflicting line to avoid

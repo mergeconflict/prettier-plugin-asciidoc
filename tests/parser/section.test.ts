@@ -87,7 +87,7 @@ describe("section parsing", () => {
   // 7+ equals signs exceed the SectionMarker range ({2,6}) and don't
   // match DocumentTitle either (which requires `= ` — equals then space
   // — at position 0, but position 1 here is `=`). So the line falls
-  // through to TextContent and becomes a paragraph.
+  // through to InlineModeStart and becomes a paragraph.
   test("seven equals signs parsed as paragraph, not heading", () => {
     const document = parse("======= Not a heading\n");
     expect(document.children).toHaveLength(1);

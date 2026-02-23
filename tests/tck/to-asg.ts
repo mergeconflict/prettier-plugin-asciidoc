@@ -95,13 +95,64 @@ function locationFromPair(start: Location, end: Location): AsgLocation {
 
 // -- Inlines ----------------------------------------------------
 
+// Flatten inline nodes to raw text for ASG (which only has
+// a "text" inline type). All formatting marks, attribute
+// references, etc. are serialized back to their source form.
+function inlineNodeToText(node: InlineNode): string {
+  const childrenToText = (children: InlineNode[]): string =>
+    children.map((child) => inlineNodeToText(child)).join("");
+  switch (node.type) {
+    case "text": {
+      return node.value;
+    }
+    case "attributeReference": {
+      return `{${node.name}}`;
+    }
+    case "bold": {
+      const mark = node.constrained ? "*" : "**";
+      return `${mark}${childrenToText(node.children)}${mark}`;
+    }
+    case "italic": {
+      const mark = node.constrained ? "_" : "__";
+      return `${mark}${childrenToText(node.children)}${mark}`;
+    }
+    case "monospace": {
+      const mark = node.constrained ? "`" : "``";
+      return `${mark}${childrenToText(node.children)}${mark}`;
+    }
+    case "highlight": {
+      const mark = node.constrained ? "#" : "##";
+      const rolePrefix = node.role === undefined ? "" : `[${node.role}]`;
+      return `${rolePrefix}${mark}${childrenToText(node.children)}${mark}`;
+    }
+  }
+}
+
 function convertInlines(nodes: InlineNode[]): AsgInline[] {
-  return nodes.map((node) => ({
-    name: "text" as const,
-    type: "string" as const,
-    value: node.value,
-    location: toAsgLocation(node),
-  }));
+  // The ASG expects a single "text" inline spanning the full
+  // paragraph content. Merge all inline nodes back to text.
+  if (nodes.length === 0) {
+    return [];
+  }
+  const value = nodes.map((child) => inlineNodeToText(child)).join("");
+  // Use the position of the first and last node to span
+  // the entire inline content.
+  const [first] = nodes;
+  const last = nodes.at(-1) ?? first;
+  return [
+    {
+      name: "text" as const,
+      type: "string" as const,
+      value,
+      location: toAsgLocation({
+        ...first,
+        position: {
+          start: first.position.start,
+          end: last.position.end,
+        },
+      }),
+    },
+  ];
 }
 
 // -- Block filtering --------------------------------------------

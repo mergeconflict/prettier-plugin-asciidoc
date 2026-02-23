@@ -37,6 +37,7 @@ import {
   MIN_DELIMITER_LENGTH,
   SAFE_DELIMITER_PAD,
 } from "./constants.js";
+import { printInlineNode } from "./print-inline.js";
 import { wordsToFillParts } from "./reflow.js";
 
 const {
@@ -122,6 +123,37 @@ function joinBlocks(blocks: BlockNode[], printed: Doc[]): Doc {
     result.push(separator, printed[index]);
   }
   return result;
+}
+
+// A whitespace-only paragraph is an artifact of source
+// formatting — e.g. a line containing only spaces before a
+// list item. Its inline content prints as empty, but without
+// filtering it out, joinBlocks would still insert a blank-line
+// separator for it, producing spurious leading blank lines.
+function isWhitespaceOnlyParagraph(block: BlockNode): boolean {
+  return (
+    block.type === "paragraph" &&
+    block.children.every(
+      (child) => child.type === "text" && child.value.trim().length === EMPTY,
+    )
+  );
+}
+
+// Filters out whitespace-only paragraphs from parallel
+// blocks/printed arrays. Returns the filtered pair.
+function filterBlocks(
+  blocks: BlockNode[],
+  printed: Doc[],
+): { blocks: BlockNode[]; printed: Doc[] } {
+  const filteredBlocks: BlockNode[] = [];
+  const filteredPrinted: Doc[] = [];
+  for (let index = EMPTY; index < blocks.length; index += SECOND_CHILD) {
+    if (!isWhitespaceOnlyParagraph(blocks[index])) {
+      filteredBlocks.push(blocks[index]);
+      filteredPrinted.push(printed[index]);
+    }
+  }
+  return { blocks: filteredBlocks, printed: filteredPrinted };
 }
 
 // Prints a comment node to Doc IR. Extracted from the main print
@@ -586,8 +618,12 @@ const printer: Printer<AnyNode> = {
       case "document": {
         // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
         const children = path.map(print, "children");
-        if (node.children.length > EMPTY) {
-          return [joinBlocks(node.children, children), hardline];
+        // Filter out whitespace-only paragraphs — they're
+        // artifacts of source formatting that would otherwise
+        // produce spurious blank lines in the output.
+        const { blocks, printed } = filterBlocks(node.children, children);
+        if (blocks.length > EMPTY) {
+          return [joinBlocks(blocks, printed), hardline];
         }
         return "";
       }
@@ -600,12 +636,16 @@ const printer: Printer<AnyNode> = {
         if (node.children.length > EMPTY) {
           // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
           const sectionChildren = path.map(print, "children");
-          return [
-            headingContent,
-            hardline,
-            hardline,
-            joinBlocks(node.children, sectionChildren),
-          ];
+          const { blocks: sectionBlocks, printed: sectionPrinted } =
+            filterBlocks(node.children, sectionChildren);
+          if (sectionBlocks.length > EMPTY) {
+            return [
+              headingContent,
+              hardline,
+              hardline,
+              joinBlocks(sectionBlocks, sectionPrinted),
+            ];
+          }
         }
         return headingContent;
       }
@@ -661,18 +701,13 @@ const printer: Printer<AnyNode> = {
       case "listItem": {
         return printListItem(node, path, print);
       }
-      case "text": {
-        // Split into words; wordsToFillParts interleaves with
-        // `line` so the enclosing fill() can decide where to
-        // break. Existing newlines in the source are treated as
-        // word separators (reflow), not preserved. Words that
-        // would become block syntax at line start are glued to
-        // their predecessor to prevent reflow from altering the
-        // document's AST.
-        const words = node.value
-          .split(/\s+/v)
-          .filter((word) => word.length > EMPTY);
-        return wordsToFillParts(words);
+      case "text":
+      case "bold":
+      case "italic":
+      case "monospace":
+      case "highlight":
+      case "attributeReference": {
+        return printInlineNode(node, path, print);
       }
     }
   },

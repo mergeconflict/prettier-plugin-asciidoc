@@ -44,8 +44,25 @@ export interface BlockCstChildren {
 }
 
 export interface ParagraphCstChildren {
-  TextContent?: IToken[];
-  Newline?: IToken[];
+  inlineLine?: CstNode[];
+  InlineNewline?: IToken[];
+}
+
+export interface InlineTokenCstChildren {
+  BoldMark?: IToken[];
+  ItalicMark?: IToken[];
+  MonoMark?: IToken[];
+  HighlightMark?: IToken[];
+  RoleAttribute?: IToken[];
+  AttributeReference?: IToken[];
+  BackslashEscape?: IToken[];
+  InlineText?: IToken[];
+  InlineChar?: IToken[];
+}
+
+export interface InlineLineCstChildren {
+  InlineModeStart?: IToken[];
+  inlineToken?: CstNode[];
 }
 
 export interface UnorderedListCstChildren {
@@ -54,9 +71,10 @@ export interface UnorderedListCstChildren {
 
 export interface ListItemCstChildren {
   UnorderedListMarker?: IToken[];
-  TextContent?: IToken[];
-  IndentedLine?: IToken[];
+  inlineLine?: CstNode[];
+  InlineNewline?: IToken[];
   Newline?: IToken[];
+  IndentedLine?: IToken[];
 }
 
 export interface OrderedListCstChildren {
@@ -65,9 +83,10 @@ export interface OrderedListCstChildren {
 
 export interface OrderedListItemCstChildren {
   OrderedListMarker?: IToken[];
-  TextContent?: IToken[];
-  IndentedLine?: IToken[];
+  inlineLine?: CstNode[];
+  InlineNewline?: IToken[];
   Newline?: IToken[];
+  IndentedLine?: IToken[];
 }
 
 export interface CalloutListCstChildren {
@@ -76,9 +95,10 @@ export interface CalloutListCstChildren {
 
 export interface CalloutListItemCstChildren {
   CalloutListMarker?: IToken[];
-  TextContent?: IToken[];
-  IndentedLine?: IToken[];
+  inlineLine?: CstNode[];
+  InlineNewline?: IToken[];
   Newline?: IToken[];
+  IndentedLine?: IToken[];
 }
 
 export interface BlockCommentCstChildren {
@@ -166,8 +186,8 @@ export interface LiteralParagraphCstChildren {
 
 export interface AdmonitionParagraphCstChildren {
   AdmonitionMarker?: IToken[];
-  TextContent?: IToken[];
-  Newline?: IToken[];
+  inlineLine?: CstNode[];
+  InlineNewline?: IToken[];
 }
 
 export interface AttributeEntryCstChildren {

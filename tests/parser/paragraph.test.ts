@@ -12,7 +12,13 @@ function asParagraph(node: BlockNode): ParagraphNode {
 
 /** Get the text value of a paragraph's first text node. */
 function paragraphText(node: ParagraphNode): string {
-  return node.children[0].value;
+  const {
+    children: [child],
+  } = node;
+  if (child.type !== "text") {
+    throw new Error(`Expected text node, got ${child.type}`);
+  }
+  return child.value;
 }
 
 describe("paragraph parsing", () => {
@@ -41,7 +47,7 @@ describe("paragraph parsing", () => {
   });
 
   // Verify the text content survives the tokenization round-trip:
-  // TextContent tokens are split per-line, then rejoined in the AST builder.
+  // InlineModeStart tokens are split per-line, then rejoined in the AST builder.
   test("paragraph text content is correct", () => {
     const document = parse("First para.\n\nSecond para.\n");
     expect(paragraphText(asParagraph(document.children[0]))).toBe(
@@ -53,7 +59,7 @@ describe("paragraph parsing", () => {
   });
 
   // Consecutive non-blank lines form a single paragraph. The grammar's
-  // paragraph rule matches TextContent (Newline TextContent)*, grouping
+  // paragraph rule matches InlineModeStart (Newline InlineModeStart)*, grouping
   // lines together. Lines are joined with \n in the text node value
   // to preserve the original line structure for the printer.
   test("multi-line paragraph has lines joined by newline", () => {

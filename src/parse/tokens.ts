@@ -6,7 +6,7 @@
  * Token definition order matters: Chevrotain uses first-match-wins for tokens
  * that match the same input at the same length. BlankLine must precede Newline
  * (a blank line starts with \n, which Newline would also match), and
- * SectionMarker must precede TextContent (a heading line is also valid text).
+ * SectionMarker must precede InlineModeStart (a heading line is also valid text).
  *
  * All tokens containing newlines need `line_breaks: true` so Chevrotain tracks
  * line/column positions correctly through them.
@@ -27,6 +27,7 @@ import type {
   IToken,
 } from "chevrotain";
 import { EMPTY, MIN_DELIMITER_LENGTH, NEXT } from "../constants.js";
+import { makeInlineMarkPattern } from "./inline-mark-pattern.js";
 
 /**
  * One or more empty/whitespace-only lines. Matches a newline
@@ -49,7 +50,7 @@ export const Newline = createToken({
 
 /**
  * A heading line starting with 2-6 equals signs followed by
- * space and title text. Must be defined before TextContent
+ * space and title text. Must be defined before InlineModeStart
  * so the lexer prefers it for heading lines.
  */
 export const SectionMarker = createToken({
@@ -76,7 +77,7 @@ export const DocumentTitle = createToken({
  * Pushes into listing_verbatim mode where content is captured
  * verbatim until a matching `----` close delimiter. Must precede
  * BlockCommentDelimiter (which also starts with repeated chars)
- * and TextContent in priority order.
+ * and InlineModeStart in priority order.
  */
 export const ListingBlockOpen = createToken({
   name: "ListingBlockOpen",
@@ -87,7 +88,7 @@ export const ListingBlockOpen = createToken({
 /**
  * Literal block open delimiter: 4+ dots on their own line.
  * Pushes into literal_verbatim mode. Must precede OrderedListMarker
- * (which also starts with dots) and TextContent.
+ * (which also starts with dots) and InlineModeStart.
  */
 export const LiteralBlockOpen = createToken({
   name: "LiteralBlockOpen",
@@ -101,7 +102,7 @@ export const LiteralBlockOpen = createToken({
 
 /**
  * Passthrough block open delimiter: 4+ plus signs on their own
- * line. Pushes into pass_verbatim mode. Must precede TextContent.
+ * line. Pushes into pass_verbatim mode. Must precede InlineModeStart.
  */
 export const PassBlockOpen = createToken({
   name: "PassBlockOpen",
@@ -216,7 +217,7 @@ export const QuoteBlockClose = createToken({
  * When encountered in default mode, pushes into block_comment mode.
  * When encountered in block_comment mode, pops back to default.
  * Must precede LineComment (which also starts with //) and
- * TextContent in priority order.
+ * InlineModeStart in priority order.
  */
 export const BlockCommentDelimiter = createToken({
   name: "BlockCommentDelimiter",
@@ -241,7 +242,7 @@ export const BlockCommentEnd = createToken({
  * or end of line. `//path` (no space) is NOT a comment.
  * The negative lookahead `(?!\S)` rejects `//` followed by
  * a non-whitespace char.
- * Must precede TextContent so the lexer prefers it.
+ * Must precede InlineModeStart so the lexer prefers it.
  */
 export const LineComment = createToken({
   name: "LineComment",
@@ -249,14 +250,14 @@ export const LineComment = createToken({
 });
 
 // Thematic break: three or more single quotes on their own line.
-// Must precede TextContent so the lexer prefers it.
+// Must precede InlineModeStart so the lexer prefers it.
 export const ThematicBreak = createToken({
   name: "ThematicBreak",
   pattern: /'{3,}/,
 });
 
 // Page break: three or more less-than signs on their own line.
-// Must precede TextContent so the lexer prefers it.
+// Must precede InlineModeStart so the lexer prefers it.
 export const PageBreak = createToken({
   name: "PageBreak",
   pattern: /<{3,}/,
@@ -458,7 +459,7 @@ export const VerbatimContent = createToken({
 /**
  * Attribute entry: `:name: value` metadata declaration.
  * Matches `:name:`, `:name: value`, `:!name:`, and `:name!:`.
- * Must precede TextContent so attribute lines aren't consumed as
+ * Must precede InlineModeStart so attribute lines aren't consumed as
  * plain text. The regex captures the full line from the opening `:`
  * through the optional value. The `!` for unset can appear before
  * or after the name.
@@ -470,7 +471,7 @@ export const VerbatimContent = createToken({
  *
  * No `^` anchor needed: Chevrotain matches at the current position
  * in the remaining input, which is always line-start after a Newline
- * token. Token priority (before TextContent) ensures attribute lines
+ * token. Token priority (before InlineModeStart) ensures attribute lines
  * are recognized first.
  */
 export const AttributeEntry = createToken({
@@ -495,7 +496,7 @@ export const BlockAnchor = createToken({
 /**
  * Block attribute list: `[source,ruby]`, `[#myid]`, `[.role]`,
  * `[start=7]`, etc. on its own line. Single square brackets.
- * Must precede TextContent so attribute lists aren't consumed
+ * Must precede InlineModeStart so attribute lists aren't consumed
  * as plain text. BlockAnchor (which starts with `[[`) must be
  * defined before this token.
  *
@@ -530,7 +531,7 @@ export const BlockTitle = createToken({
  * five admonition types can be written as a label prefix on a
  * paragraph. The marker is consumed separately so the grammar can
  * distinguish admonition paragraphs from regular paragraphs.
- * Must precede TextContent so the lexer prefers it.
+ * Must precede InlineModeStart so the lexer prefers it.
  */
 export const AdmonitionMarker = createToken({
   name: "AdmonitionMarker",
@@ -544,7 +545,7 @@ export const AdmonitionMarker = createToken({
  * alternative level-1 marker. The marker is consumed separately from
  * the item text so the AST builder can determine nesting depth from
  * the marker length. The formatter normalizes `-` to `*`.
- * Must precede TextContent so the lexer prefers it for list lines.
+ * Must precede InlineModeStart so the lexer prefers it for list lines.
  */
 export const UnorderedListMarker = createToken({
   name: "UnorderedListMarker",
@@ -557,7 +558,7 @@ export const UnorderedListMarker = createToken({
  * levels (`.`, `..`, `...`, etc.). The marker is consumed
  * separately from the item text so the AST builder can
  * determine nesting depth from the marker length.
- * Must precede TextContent so the lexer prefers it.
+ * Must precede InlineModeStart so the lexer prefers it.
  *
  * The trailing space distinguishes list markers (`. Item`) from
  * block titles (`.Title`), which have no space after the dot.
@@ -572,7 +573,7 @@ export const OrderedListMarker = createToken({
  * Callout list item marker: `<N> ` where N is a positive
  * integer, or `<.> ` for auto-numbering. The angle brackets
  * and trailing space distinguish callout markers from other
- * AsciiDoc constructs. Must precede TextContent so the lexer
+ * AsciiDoc constructs. Must precede InlineModeStart so the lexer
  * prefers it for callout list lines.
  */
 export const CalloutListMarker = createToken({
@@ -584,7 +585,7 @@ export const CalloutListMarker = createToken({
  * An indented line: one or more leading spaces followed by
  * non-whitespace content. Indented lines form literal
  * paragraphs (monospace, preserved formatting). Must appear
- * before TextContent so the leading spaces are not consumed
+ * before InlineModeStart so the leading spaces are not consumed
  * by the catch-all.
  */
 export const IndentedLine = createToken({
@@ -592,20 +593,112 @@ export const IndentedLine = createToken({
   pattern: / +\S[^\n]*/,
 });
 
+// ── Inline lexer mode tokens ────────────────────────────────
+//
+// When no block-level token matches in default_mode,
+// InlineModeStart fires (zero-length match) and pushes the
+// lexer into inline mode. There, formatting marks, attribute
+// references, and runs of plain text are tokenized until a
+// newline pops back to default_mode.
+
 /**
- * Catch-all for any non-newline text on a line (default mode).
- * Must be last in the token priority order so that more specific
- * tokens (headings, comments, list markers, etc.) are matched
- * first.
- *
- * The `\S` anchor in the middle requires at least one
- * non-whitespace character, so whitespace-only lines are not
- * tokenized as text. In AsciiDoc, a line containing only spaces
- * or tabs is a blank line (block separator), not content.
+ * Zero-length custom pattern that pushes the lexer into inline
+ * mode. Placed last in default_mode so all block-level tokens
+ * get priority. The custom pattern function (not a RegExp)
+ * bypasses Chevrotain's empty-match validation. Only fires when
+ * a non-newline character exists at the current offset.
  */
-export const TextContent = createToken({
-  name: "TextContent",
-  pattern: /[^\n]*\S[^\n]*/,
+export const InlineModeStart = createToken({
+  name: "InlineModeStart",
+  pattern: {
+    exec: (text: string, offset: number): CustomPatternMatcherReturn | null => {
+      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
+      if (offset >= text.length || text[offset] === "\n") return null;
+      return [""] as CustomPatternMatcherReturn;
+    },
+  },
+  push_mode: "inline",
+  line_breaks: false,
+});
+
+/**
+ * Newline inside inline mode — pops back to default_mode so the
+ * next line gets block-level token checks.
+ */
+export const InlineNewline = createToken({
+  name: "InlineNewline",
+  pattern: /\n/,
+  pop_mode: true,
+  line_breaks: true,
+});
+
+/** Escaped inline formatting mark: `\*`, `\_`, `` \` ``, `\#`. */
+export const BackslashEscape = createToken({
+  name: "BackslashEscape",
+  pattern: /\\[*_`#]/,
+});
+
+/** Attribute reference like `{name}` or `{counter:name}`. */
+export const AttributeReference = createToken({
+  name: "AttributeReference",
+  pattern: /\{[\w:.-][\w:.-]*\}/,
+});
+
+/** Role attribute `[role]` immediately before `#` (highlight). */
+export const RoleAttribute = createToken({
+  name: "RoleAttribute",
+  pattern: /\[[^\]]+\](?=#)/,
+});
+
+/** Bold formatting mark — `*` (constrained) or `**` (unconstrained). */
+export const BoldMark = createToken({
+  name: "BoldMark",
+  pattern: makeInlineMarkPattern("*"),
+  line_breaks: false,
+  start_chars_hint: ["*"],
+});
+
+/** Italic formatting mark — `_` (constrained) or `__` (unconstrained). */
+export const ItalicMark = createToken({
+  name: "ItalicMark",
+  pattern: makeInlineMarkPattern("_"),
+  line_breaks: false,
+  start_chars_hint: ["_"],
+});
+
+/**
+ * Monospace formatting mark — `` ` `` (constrained) or
+ * ``` `` ``` (unconstrained).
+ */
+export const MonoMark = createToken({
+  name: "MonoMark",
+  pattern: makeInlineMarkPattern("`"),
+  line_breaks: false,
+  start_chars_hint: ["`"],
+});
+
+/** Highlight formatting mark — `#` (constrained) or `##` (unconstrained). */
+export const HighlightMark = createToken({
+  name: "HighlightMark",
+  pattern: makeInlineMarkPattern("#"),
+  line_breaks: false,
+  start_chars_hint: ["#"],
+});
+
+/** Run of non-special characters in inline mode. */
+export const InlineText = createToken({
+  name: "InlineText",
+  pattern: /[^\n*_`#\\{[]+/,
+});
+
+/**
+ * Single-character fallback for inline mode. MUST be last in
+ * the inline mode token list so it only fires when no other
+ * inline token matches.
+ */
+export const InlineChar = createToken({
+  name: "InlineChar",
+  pattern: /[^\n]/,
 });
 
 /**
@@ -658,7 +751,19 @@ const multiModeDefinition = {
       OrderedListMarker,
       CalloutListMarker,
       IndentedLine,
-      TextContent,
+      InlineModeStart,
+    ],
+    inline: [
+      BackslashEscape,
+      AttributeReference,
+      RoleAttribute,
+      BoldMark,
+      ItalicMark,
+      MonoMark,
+      HighlightMark,
+      InlineNewline,
+      InlineText,
+      InlineChar, // single-char fallback, must be last
     ],
     block_comment: [
       // BlankLine before Newline (same reason as default mode).
@@ -723,7 +828,17 @@ export const allTokens = [
   OrderedListMarker,
   CalloutListMarker,
   IndentedLine,
-  TextContent,
+  InlineModeStart,
+  InlineNewline,
+  BackslashEscape,
+  AttributeReference,
+  RoleAttribute,
+  BoldMark,
+  ItalicMark,
+  MonoMark,
+  HighlightMark,
+  InlineText,
+  InlineChar,
 ];
 
 /** Reusable lexer instance — stateless, safe to share. */

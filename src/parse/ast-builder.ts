@@ -24,7 +24,6 @@ import type {
   DelimitedBlockNode,
   ParentBlockNode,
   AdmonitionNode,
-  TextNode,
   BlockNode,
   ListNode,
 } from "../ast.js";
@@ -46,6 +45,12 @@ import {
 import { nestSections } from "./section-builder.js";
 import { convertParagraphFormBlocks } from "./paragraph-form.js";
 import { convertDiscreteHeadings } from "./discrete-heading.js";
+import {
+  buildInlineNodesFromLines,
+  flattenInlineTokens,
+  inlineLinesToTextTokens,
+  unwrapInlineLines,
+} from "./inline-builder.js";
 import {
   EMPTY,
   FIRST,
@@ -197,34 +202,33 @@ export class AstBuilder extends BaseCstVisitor {
     return this.visit(subrule, sourceText) as BlockNode;
   }
 
-  /**
-   * Joins TextContent tokens into a single text node. The
-   * lexer splits each line into a separate token; we rejoin
-   * with \n so the printer can reflow independently.
-   */
+  // Builds inline nodes from CST inline tokens and computes
+  // position from first meaningful token to last.
   paragraph(context: ParagraphCstChildren): ParagraphNode {
-    const textTokens = context.TextContent ?? [];
-    // The lexer splits each line into a separate TextContent token
-    // (Newlines between them are consumed by the grammar but not
-    // passed here). We rejoin with \n so the printer can later
-    // split and trim each line independently.
-    const value = textTokens.map((t) => t.image).join("\n");
+    const inlineLines = context.inlineLine ?? [];
+    const inlineNewlines = context.InlineNewline ?? [];
+    const children = buildInlineNodesFromLines(inlineLines, inlineNewlines);
 
-    const [firstToken] = textTokens;
-    const lastToken = textTokens.at(LAST_ELEMENT) ?? firstToken;
+    // Position excludes trailing newlines — they are
+    // structural separators, not paragraph content. Use
+    // only inline content tokens (not InlineNewline) for
+    // position tracking.
+    const contentTokens = flattenInlineTokens(
+      unwrapInlineLines(inlineLines),
+      [],
+    );
 
-    const start = tokenStartLocation(firstToken);
-    const end = tokenEndLocation(lastToken);
+    const start =
+      contentTokens.length > EMPTY
+        ? tokenStartLocation(contentTokens[FIRST])
+        : makeLocation(FIRST, FIRST_LINE, FIRST_COLUMN);
 
-    const textNode: TextNode = {
-      type: "text",
-      value,
-      position: { start, end },
-    };
+    const lastToken = contentTokens.at(LAST_ELEMENT);
+    const end = lastToken === undefined ? start : tokenEndLocation(lastToken);
 
     return {
       type: "paragraph",
-      children: [textNode],
+      children,
       position: { start, end },
     };
   }
@@ -244,10 +248,15 @@ export class AstBuilder extends BaseCstVisitor {
   /** Extracts a flat list item (depth, text, checkbox, position). */
   listItem(context: ListItemCstChildren): FlatListItem {
     const markerToken = context.UnorderedListMarker?.[FIRST];
+    const textTokens = inlineLinesToTextTokens(
+      context.inlineLine ?? [],
+      context.InlineNewline ?? [],
+    );
+
     if (markerToken === undefined) {
       // Recovery entered the rule without a marker token.
       // Build a stub item from whatever text is available.
-      return buildRecoveredListItem(context.TextContent ?? []);
+      return buildRecoveredListItem(textTokens);
     }
 
     // The marker image is `*{1,5} ` or `- `. For `*`-style markers,
@@ -255,13 +264,10 @@ export class AstBuilder extends BaseCstVisitor {
     // cases reduce to image length minus the trailing space.
     const depth = markerToken.image.length - TRAILING_SPACE_LEN;
 
-    // Merge TextContent and IndentedLine tokens in source order.
+    // Merge inline text and IndentedLine tokens in source order.
     // IndentedLine images have leading whitespace that must be
     // stripped so the AST value contains clean text.
-    const allTokens = mergeTextTokens(
-      context.TextContent ?? [],
-      context.IndentedLine ?? [],
-    );
+    const allTokens = mergeTextTokens(textTokens, context.IndentedLine ?? []);
     const rawValue = allTokens.map((t) => t.image.trimStart()).join("\n");
 
     // Detect checklist markers: [x], [*], or [ ] followed by a
@@ -314,15 +320,28 @@ export class AstBuilder extends BaseCstVisitor {
     const markerToken = context.OrderedListMarker?.[FIRST];
     if (markerToken === undefined) {
       // Recovery entered the rule without a marker token.
-      return buildRecoveredListItem(context.TextContent ?? []);
+      return buildRecoveredListItem(
+        inlineLinesToTextTokens(
+          context.inlineLine ?? [],
+          context.InlineNewline ?? [],
+        ),
+      );
     }
 
     // The marker image is `.{1,5} ` — depth is the number of
     // dots (image length minus the trailing space).
     const depth = markerToken.image.length - TRAILING_SPACE_LEN;
-    return buildBaseFlatItem(markerToken, context.TextContent ?? [], depth, {
-      indentedTokens: context.IndentedLine ?? [],
-    });
+    return buildBaseFlatItem(
+      markerToken,
+      inlineLinesToTextTokens(
+        context.inlineLine ?? [],
+        context.InlineNewline ?? [],
+      ),
+      depth,
+      {
+        indentedTokens: context.IndentedLine ?? [],
+      },
+    );
   }
 
   // Builds a flat callout list (callouts don't nest).
@@ -339,9 +358,14 @@ export class AstBuilder extends BaseCstVisitor {
   /** Extracts flat callout item (callout number, text, position). */
   calloutListItem(context: CalloutListItemCstChildren): FlatListItem {
     const markerToken = context.CalloutListMarker?.[FIRST];
+    const textTokens = inlineLinesToTextTokens(
+      context.inlineLine ?? [],
+      context.InlineNewline ?? [],
+    );
+
     if (markerToken === undefined) {
       // Recovery entered the rule without a marker token.
-      return buildRecoveredListItem(context.TextContent ?? []);
+      return buildRecoveredListItem(textTokens);
     }
 
     // Extract callout number: "<1> " → 1, "<.> " → 0 (auto).
@@ -349,15 +373,10 @@ export class AstBuilder extends BaseCstVisitor {
     const inner = innerMatch?.groups?.inner ?? ".";
     const calloutNumber = inner === "." ? EMPTY : Number.parseInt(inner, 10);
 
-    return buildBaseFlatItem(
-      markerToken,
-      context.TextContent ?? [],
-      CALLOUT_DEPTH,
-      {
-        calloutNumber,
-        indentedTokens: context.IndentedLine ?? [],
-      },
-    );
+    return buildBaseFlatItem(markerToken, textTokens, CALLOUT_DEPTH, {
+      calloutNumber,
+      indentedTokens: context.IndentedLine ?? [],
+    });
   }
 
   /** Extracts verbatim content between block comment delimiters. */
@@ -559,7 +578,10 @@ export class AstBuilder extends BaseCstVisitor {
   admonitionParagraph(context: AdmonitionParagraphCstChildren): AdmonitionNode {
     return buildAdmonitionParagraph(
       context.AdmonitionMarker?.[FIRST],
-      context.TextContent ?? [],
+      inlineLinesToTextTokens(
+        context.inlineLine ?? [],
+        context.InlineNewline ?? [],
+      ),
     );
   }
 

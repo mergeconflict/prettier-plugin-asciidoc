@@ -41,7 +41,7 @@ Chevrotain CST → AST (ours) → ASG (spec's)
    all syntax      source-preserving    semantic-only
 ```
 
-**Chevrotain's CST** is produced automatically by the parser. Nodes correspond 1:1 to grammar rules and contain flat bags of tokens. You could reconstruct the original text from it, but the uniform structure (`children.TextContent[0]`, `children.Newline[1]`, etc.) is awkward to work with.
+**Chevrotain's CST** is produced automatically by the parser. Nodes correspond 1:1 to grammar rules and contain flat bags of tokens. You could reconstruct the original text from it, but the uniform structure (`children.InlineText[0]`, `children.InlineNewline[1]`, etc.) is awkward to work with.
 
 **Our AST** (`src/ast.ts`) has typed, semantic nodes — `SectionNode` with a `level` property, `ParagraphNode` with inline children, etc. The AST Builder visitor transforms the CST into this shape. This is what we hand to Prettier.
 
@@ -192,9 +192,9 @@ parses that text independently. This works but has real downsides:
   off-by-one is a bug in Prettier's `locStart`/`locEnd`.
 - **Two CSTs to merge.** The AST builder would need to combine
   output from two parsers into a single tree — awkward and error-prone.
-- **Wasted tokenization.** The block-level lexer tokenizes paragraph
-  content as a single `TextContent` blob, then the inline lexer
-  re-tokenizes it from scratch.
+- **Wasted tokenization.** A two-parser approach would tokenize
+  paragraph content once at the block level, then re-tokenize it
+  from scratch for inline markup.
 
 ### Chosen approach: unified grammar with Chevrotain lexer modes
 
@@ -208,9 +208,10 @@ The mode transitions:
 - **`default_mode` → `inline`**: When the lexer encounters the
   start of paragraph text, a list item's text content, a block
   title, or any other context where inline markup is valid, it
-  pushes into `inline` mode. In this mode, `*` produces a
-  `BoldMark` token instead of being part of `TextContent`, and
-  block-level tokens like `ListingBlockOpen` don't exist.
+  pushes into `inline` mode via `InlineModeStart`. In this mode,
+  `*` produces a `BoldMark` token, plain text becomes `InlineText`
+  tokens, and block-level tokens like `ListingBlockOpen` don't
+  exist.
 - **`inline` → `default_mode`**: When the lexer hits a blank line
   or structural boundary (block delimiter, heading marker, list
   marker at the start of a new item), it pops back to `default_mode`.
@@ -241,17 +242,19 @@ text. The custom matcher function receives the full text and current
 offset, allowing it to inspect surrounding characters.
 
 These matchers are substantial enough to warrant their own file
-(`src/parse/inline-tokens.ts`) but they register as token definitions
-in the `inline` lexer mode — they're not a separate lexer.
+(`src/parse/inline-mark-pattern.ts`) but they register as token
+definitions in the `inline` lexer mode — they're not a separate
+lexer. The AST building logic that pairs formatting marks into
+nested spans lives in `src/parse/inline-builder.ts`.
 
 ### What stays in separate files
 
-The inline token definitions (`src/parse/inline-tokens.ts`) live
-in their own file because the custom pattern matchers are
-substantial. The inline grammar rules live in `src/parse/grammar.ts`
-alongside the block-level rules — they're methods on the same
-parser class. "Separate file for tokens" is about code
-organization, not separate parser instances.
+The custom inline mark patterns (`src/parse/inline-mark-pattern.ts`)
+and the inline AST builder (`src/parse/inline-builder.ts`) live in
+their own files because they are substantial. The inline grammar
+rules live in `src/parse/grammar.ts` alongside the block-level
+rules — they're methods on the same parser class. "Separate files"
+is about code organization, not separate parser instances.
 
 ## Why Chevrotain?
 

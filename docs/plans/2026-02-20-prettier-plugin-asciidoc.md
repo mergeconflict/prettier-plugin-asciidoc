@@ -82,7 +82,8 @@ that feedback so it's not forgotten.
 - [x] Task 10c: Backtick-fenced code blocks
 - [x] Task 11c: Parent block delimiter length matching
 - [x] Task 11b: Block masquerading (style-driven content model)
-- [ ] Task 14: Inline parser — bold, italic, monospace, highlight, attribute references
+- [x] Task 14: Inline parser — bold, italic, monospace, highlight, attribute references
+- [ ] Task 14b: Inline parser hardening — test gaps, architectural improvements, token dispatch cleanup
 - [ ] Task 15: Inline parser — links and cross-references
 - [ ] Task 16: Inline parser — macros, passthroughs, line breaks
 - [ ] Task 17: Parse description lists
@@ -165,9 +166,113 @@ jj new
 
 ---
 
+## Task 14b: Inline parser hardening — test gaps, architectural improvements, token dispatch cleanup
+
+Post-implementation review of the Task 14 multi-mode inline rewrite identified several nice-to-have improvements. None are blocking, but all should be addressed before moving past Milestone 6 (inline parsing).
+
+### Test gaps
+
+The following edge cases lack dedicated test coverage. Add tests to `tests/parser/inline-formatting.test.ts` and `tests/format/inline-formatting.test.ts`:
+
+**Step 1: Backslash escape before unconstrained marks**
+
+Test `\**not bold**` — backslash before an unconstrained double mark. The `BackslashEscape` token pattern is `/\\[*_`#]/`which matches`\*`(single char after backslash). Verify that`\**text\*\*` produces text(`\*`) + text(`*text\*_`) or similar — the escape suppresses the unconstrained open but doesn't consume the second `_`.
+
+**Step 2: Formatting spans crossing line boundaries**
+
+Test multi-line constrained marks:
+
+```
+*bold
+spanning two lines* here.
+```
+
+The inline mode pops at every `\n` via `InlineNewline`, so marks on different lines are in separate `inlineLine` CST nodes. The current `buildInlineNodes` merges tokens across lines before pairing, so this should work. Add a test to verify and prevent regression.
+
+**Step 3: `InlineChar` fallback for stray special chars**
+
+Test that stray `[` (not followed by `]...#`) and stray `{` (not matching `{name}`) are consumed by `InlineChar` and treated as plain text:
+
+- `text [ more text` → single text node
+- `text { more text` → single text node
+- `text [not-a-role] more` → single text node (no `#` follows)
+
+**Step 4: Empty paragraph with only formatting marks**
+
+Test a paragraph consisting of only marks with no text content, e.g. `**\n`. The AST builder's `paragraph()` method has a `contentTokens.length > EMPTY` guard that falls back to a synthetic position — verify this path produces a valid (possibly empty-text) paragraph, not a crash.
+
+**Step 5: Whitespace-only paragraphs inside sections**
+
+The printer's `isWhitespaceOnlyParagraph` filtering is tested for the document level but not inside sections. Add a test:
+
+```
+== Section
+
+
+Some text.
+```
+
+The whitespace-only line between heading and text should be dropped.
+
+**Step 6: Run tests, commit**
+
+```
+bun run check && bun run lint && bun test && bun run build
+jj describe -m "test: add inline parser hardening tests"
+jj new
+```
+
+### Architectural improvements
+
+**Step 7: Move whitespace-only rejection to `InlineModeStart`**
+
+The `InlineModeStart` custom pattern currently checks `offset >= text.length || text[offset] === '\n'` to avoid firing on blank lines. It could additionally reject whitespace-only content by scanning forward to the next `\n` (or EOF) and checking for at least one non-whitespace character. This would prevent whitespace-only paragraphs from ever being created, removing the need for the `isWhitespaceOnlyParagraph` filter in the printer.
+
+After this change, remove `isWhitespaceOnlyParagraph` and the `filterBlocks` helper from `src/printer.ts`, and remove the whitespace-only early return from `src/print-inline.ts`.
+
+**Files:**
+
+- Modify: `src/parse/tokens.ts` — enhance `InlineModeStart` custom pattern
+- Modify: `src/printer.ts` — remove `isWhitespaceOnlyParagraph` and `filterBlocks`
+- Modify: `src/print-inline.ts` — remove whitespace-only early return
+
+**Step 8: Token type identity comparison instead of string comparison**
+
+In `src/parse/inline-builder.ts`, the `buildFromTokens` function dispatches on `token.tokenType.name` (string comparison). This is fragile — a renamed token breaks silently. Replace with identity comparison against imported token objects:
+
+```typescript
+import { RoleAttribute, AttributeReference, InlineNewline } from "../tokens.js";
+// ...
+if (token.tokenType === RoleAttribute) { ... }
+```
+
+This also applies to the mark-type lookup in `lookupMarkType` and the close-mark check in `findCloseMark`. The `findCloseMark` case (comparing two unknown tokens) should stay as `tokenType.name` comparison since it compares two runtime values.
+
+**Files:**
+
+- Modify: `src/parse/inline-builder.ts` — import token types, replace string comparisons with identity checks
+
+**Step 9: `flattenInlineTokens` merge instead of sort**
+
+The `flattenInlineTokens` function uses `tokens.toSorted()` to merge inline tokens with newline tokens by offset. Both input arrays are already sorted (inline tokens from CST walk, newline tokens from grammar). Replace the sort with a linear merge of two sorted sequences for O(n) instead of O(n log n). Not urgent — only matters for very long paragraphs.
+
+**Files:**
+
+- Modify: `src/parse/inline-builder.ts` — replace `toSorted` with merge function
+
+**Step 10: Run tests, commit**
+
+```
+bun run check && bun run lint && bun test && bun run build
+jj describe -m "refactor: inline parser hardening — lexer-level whitespace rejection, token identity dispatch, merge sort"
+jj new
+```
+
+---
+
 ## Task 15: Inline parser — links and cross-references
 
-Parse `https://url[text]`, `link:path[text]`, `<<ref>>`, `<<ref,text>>`, `xref:doc#ref[text]`, and inline anchors `[[id]]` within paragraph text.
+Parse `https://url[text]`, `link:path[text]`, `<<ref>>`, `<<ref,text>>`, `xref:doc#ref[text]`, and inline anchors `[[id]]` / `[[id,reftext]]` within paragraph text. The two-argument anchor form (`[[id, reftext]]`) sets the default cross-reference display text and is common in glossaries (seen in the Oxide RFD corpus).
 
 **Files:**
 

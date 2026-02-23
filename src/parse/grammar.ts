@@ -8,6 +8,37 @@
  * nesting at parse time. The AST builder handles grouping child blocks under
  * their heading after the CST is built.
  *
+ * ## Inline mode design
+ *
+ * The lexer uses a multi-mode architecture to handle inline formatting:
+ *
+ * - `default_mode` contains block-level tokens (section markers, list markers,
+ *   delimiters, etc.). At the END of default_mode, `InlineModeStart` is a
+ *   zero-length custom pattern that pushes to `inline` mode when no block
+ *   token matches. This is the catch-all for text content.
+ *
+ * - `inline` mode contains formatting marks (`*`, `_`, `` ` ``, `#`),
+ *   attribute references, backslash escapes, and plain text tokens.
+ *   `InlineNewline` (`\n`) pops back to `default_mode` so the next line
+ *   gets block-level token checks.
+ *
+ * This creates a per-line cycle: default_mode tries block tokens → none match
+ * → InlineModeStart pushes to inline → inline tokens consumed → InlineNewline
+ * pops to default_mode → next line.
+ *
+ * The grammar expresses this cycle through `inlineLine` (one line of inline
+ * content) and `InlineNewline` (line separator that transitions modes).
+ *
+ * ## Newline token distinction
+ *
+ * There are TWO newline tokens with different roles:
+ * - `Newline` — in `default_mode`, a structural line separator
+ * - `InlineNewline` — in `inline` mode, pops back to default_mode
+ *
+ * This distinction matters in list items where IndentedLine (matched in
+ * default_mode) uses `Newline` as its line separator, while inline content
+ * uses `InlineNewline`. See `listItemRule` for the full explanation.
+ *
  * `performSelfAnalysis()` runs once per class instantiation to build lookahead
  * tables. We create a single parser instance and reuse it by setting `.input`
  * before each parse.
@@ -42,8 +73,18 @@ import {
   SectionMarker,
   SidebarBlockClose,
   SidebarBlockOpen,
+  AttributeReference,
+  BackslashEscape,
+  BoldMark,
+  HighlightMark,
   IndentedLine,
-  TextContent,
+  InlineChar,
+  InlineModeStart,
+  InlineNewline,
+  InlineText,
+  ItalicMark,
+  MonoMark,
+  RoleAttribute,
   UnorderedListMarker,
   OrderedListMarker,
   CalloutListMarker,
@@ -53,7 +94,7 @@ import {
   BlockTitle,
   AdmonitionMarker,
 } from "./tokens.js";
-import { LOOKAHEAD } from "../constants.js";
+import { LOOKAHEAD, LOOKAHEAD_2 } from "../constants.js";
 
 /**
  * A single instance is created and reused — set `.input`
@@ -95,8 +136,8 @@ export class AsciidocParser extends CstParser {
    * A block-level element: section heading, comment, attribute
    * entry, list, or paragraph. Attribute entry must precede
    * paragraph because an attribute line like `:toc:` would also
-   * match TextContent. Unordered list must precede paragraph
-   * because `* text` would also match TextContent.
+   * match as inline text. Unordered list must precede paragraph
+   * because `* text` would also match as inline text.
    */
   block = this.RULE("block", () => {
     this.OR([
@@ -307,35 +348,135 @@ export class AsciidocParser extends CstParser {
   }
 
   // Factory for list item rules. All three item types share
-  // identical grammar: a marker token, text content, and
-  // optional continuation lines (Newline + TextContent pairs).
+  // identical grammar: a marker token followed by inline
+  // content with optional continuation lines.
+  //
+  // The grammar handles two distinct continuation patterns
+  // because of how the lexer's inline mode interacts with
+  // line boundaries:
+  //
+  // Pattern 1 (MANY2): InlineNewline-separated lines
+  //   When the first line's content is inline-tokenized,
+  //   the lexer is in `inline` mode. InlineNewline (`\n`)
+  //   pops back to `default_mode`. If the next line starts
+  //   with non-indented text, InlineModeStart fires (the
+  //   catch-all at the end of default_mode) and pushes
+  //   back to inline. This loop handles that cycle:
+  //   InlineNewline → inlineLine | IndentedLine.
+  //
+  // Pattern 2 (MANY3): Newline-separated lines after indent
+  //   When an IndentedLine matches (a line starting with
+  //   whitespace), it consumes the ENTIRE line as a single
+  //   token in `default_mode` — no push to inline mode.
+  //   The next line boundary is therefore a Newline token
+  //   (in default_mode), not an InlineNewline (which only
+  //   exists in inline mode). MANY3 handles continuation
+  //   lines that follow an IndentedLine, using Newline
+  //   as the separator.
+  //
+  //   MANY3 requires a GATE because Newline is also used
+  //   for blank lines (paragraph boundaries). Without the
+  //   GATE, the parser would consume a blank line's Newline
+  //   and then fail to match IndentedLine or InlineModeStart
+  //   on the next line (which might be a new list marker or
+  //   block-level construct). The GATE peeks at LA(2) — the
+  //   token AFTER the Newline — and only allows the loop to
+  //   continue if it's IndentedLine or InlineModeStart
+  //   (legitimate continuation content).
+  //
+  // Example token sequences:
+  //
+  //   "* text\n  indented\n  more\n"
+  //   ULM InMS InTx InNL IndL NL IndL NL
+  //        ^MANY2 loop^  ^MANY3 loop^
+  //
+  //   "* text\n  indented\nflush\n"
+  //   ULM InMS InTx InNL IndL NL InMS InTx InNL
+  //        ^MANY2 loop^  ^MANY3^
+  //
+  //   "* text\n\nparagraph\n"
+  //   ULM InMS InTx InNL NL InMS InTx InNL
+  //        ^MANY2^
+  //   MANY3 never runs here — it's nested inside the
+  //   IndentedLine branch of MANY2's OR. Since MANY2
+  //   consumed InNL and found Newline (not IndentedLine
+  //   or InlineModeStart), OPTION2 produces nothing.
+  //   MANY2 then tries another iteration but LA(1) is
+  //   Newline (not InlineNewline), so the loop exits.
+  //   The parser returns to the document level, where
+  //   Newline is consumed as a blank line separator and
+  //   "paragraph" becomes a separate paragraph block.
   private listItemRule(
     name: string,
     markerToken: TokenType,
   ): ParserMethod<[], CstNode> {
     return this.RULE(name, () => {
       this.CONSUME(markerToken);
-      this.CONSUME(TextContent);
-      this.MANY(() => {
-        this.CONSUME(Newline);
-        // Continuation lines may be flush (TextContent) or
-        // indented (IndentedLine) — both are part of the same
-        // list item paragraph.
-        this.OR([
-          {
-            ALT: () => {
-              this.CONSUME2(TextContent);
+      // First line of the list item. After the marker token
+      // is consumed in default_mode, InlineModeStart (the
+      // catch-all at the end of default_mode) fires and
+      // pushes to inline mode for the remaining text.
+      this.SUBRULE(this.inlineLine);
+      // Continuation lines (Pattern 1): each iteration
+      // starts with InlineNewline popping back to
+      // default_mode, then optionally consumes the next
+      // line as either inline text or an indented line.
+      this.MANY2(() => {
+        this.CONSUME(InlineNewline);
+        this.OPTION2(() => {
+          this.OR([
+            {
+              ALT: () => {
+                this.SUBRULE2(this.inlineLine);
+              },
             },
-          },
-          {
-            ALT: () => {
-              this.CONSUME(IndentedLine);
+            {
+              ALT: () => {
+                // IndentedLine matches a line starting with
+                // whitespace as a single token in
+                // default_mode. No push to inline mode.
+                this.CONSUME(IndentedLine);
+                // Pattern 2: after an IndentedLine, more
+                // lines may follow using Newline (in
+                // default_mode) as the separator instead
+                // of InlineNewline (which only exists in
+                // inline mode).
+                this.MANY3({
+                  GATE: () => {
+                    // Peek past the Newline to check if the
+                    // next line is continuation content.
+                    // LA(1) = Newline, LA(2) = next token.
+                    // Only continue if LA(2) is IndentedLine
+                    // or InlineModeStart. This rejects:
+                    // - BlankLine (paragraph boundary)
+                    // - List markers (new list item)
+                    // - Block delimiters, etc.
+                    const next = this.LA(LOOKAHEAD_2);
+                    return (
+                      next.tokenType === IndentedLine ||
+                      next.tokenType === InlineModeStart
+                    );
+                  },
+                  DEF: () => {
+                    this.CONSUME(Newline);
+                    this.OR2([
+                      {
+                        ALT: () => {
+                          this.CONSUME2(IndentedLine);
+                        },
+                      },
+                      {
+                        ALT: () => {
+                          this.SUBRULE3(this.inlineLine);
+                        },
+                      },
+                    ]);
+                  },
+                });
+              },
             },
-          },
-        ]);
-      });
-      this.OPTION(() => {
-        this.CONSUME2(Newline);
+          ]);
+        });
       });
     });
   }
@@ -364,38 +505,117 @@ export class AsciidocParser extends CstParser {
   /** Callout list: one or more callout list items. */
   calloutList = this.listRule("calloutList", this.calloutListItem);
 
-  /**
-   * A paragraph: one or more text lines.
-   * `TextContent (Newline TextContent)* Newline?`
-   */
+  // ── Inline content subrules ───────────────────────────
+  //
+  // The lexer uses a multi-mode design for inline content.
+  // Block-level tokens live in `default_mode`. When no
+  // block token matches a line, InlineModeStart (a
+  // zero-length custom pattern at the end of default_mode)
+  // fires and pushes to `inline` mode without consuming
+  // any characters. In inline mode, formatting marks
+  // (BoldMark, ItalicMark, etc.), attribute references,
+  // backslash escapes, and plain text are tokenized.
+  //
+  // InlineNewline (`\n` in inline mode) pops back to
+  // default_mode, giving each new line a chance to match
+  // block-level tokens. This creates a natural line-by-line
+  // cycle: default_mode → InlineModeStart → inline mode →
+  // InlineNewline → default_mode → next line.
+  //
+  // The grammar rules below consume this token stream.
+  // `inlineLine` wraps one line's worth of inline tokens
+  // (InlineModeStart + inlineToken*). Multi-line constructs
+  // like paragraphs chain multiple inlineLines separated by
+  // InlineNewline tokens.
+
+  // Matches any single inline-mode token. The alternatives
+  // correspond to the tokens defined in the `inline` mode
+  // of the lexer's multiModeDefinition. InlineText matches
+  // runs of non-special characters; InlineChar is a
+  // single-character fallback for chars that didn't match
+  // any higher-priority token (e.g. a stray `*` not at a
+  // word boundary). The AST builder merges adjacent text
+  // tokens into combined TextNode values.
+  inlineToken = this.RULE("inlineToken", () => {
+    this.OR([
+      { ALT: () => this.CONSUME(BoldMark) },
+      { ALT: () => this.CONSUME(ItalicMark) },
+      { ALT: () => this.CONSUME(MonoMark) },
+      { ALT: () => this.CONSUME(HighlightMark) },
+      { ALT: () => this.CONSUME(RoleAttribute) },
+      { ALT: () => this.CONSUME(AttributeReference) },
+      { ALT: () => this.CONSUME(BackslashEscape) },
+      { ALT: () => this.CONSUME(InlineText) },
+      { ALT: () => this.CONSUME(InlineChar) },
+    ]);
+  });
+
+  // A single line of inline content. InlineModeStart pushes
+  // from default_mode to inline mode (zero-length match),
+  // then MANY consumes inline tokens until InlineNewline or
+  // EOF. Extracted as a subrule to keep callback nesting
+  // within the max-nested-callbacks lint limit, and to give
+  // the CST a clear per-line grouping that the AST builder
+  // can unwrap.
+  inlineLine = this.RULE("inlineLine", () => {
+    this.CONSUME(InlineModeStart);
+    this.MANY(() => {
+      this.SUBRULE(this.inlineToken);
+    });
+  });
+
   /**
    * An admonition paragraph: `NOTE: text`, `TIP: text`, etc.
    * The AdmonitionMarker token consumes the label prefix
    * (`NOTE: `); the remaining first-line text and any
    * continuation lines form the admonition content.
+   *
+   * The first inlineLine is optional because empty
+   * admonitions (just `NOTE:`) are valid AsciiDoc.
+   * Continuation lines use InlineNewline (which pops
+   * inline mode) as the separator, matching the paragraph
+   * pattern.
    */
   admonitionParagraph = this.RULE("admonitionParagraph", () => {
     this.CONSUME(AdmonitionMarker);
     this.OPTION(() => {
-      this.CONSUME(TextContent);
+      this.SUBRULE(this.inlineLine);
     });
-    this.MANY(() => {
-      this.CONSUME(Newline);
-      this.CONSUME2(TextContent);
-    });
-    this.OPTION2(() => {
-      this.CONSUME2(Newline);
+    this.MANY2(() => {
+      this.CONSUME(InlineNewline);
+      this.OPTION2(() => {
+        this.SUBRULE2(this.inlineLine);
+      });
     });
   });
 
+  // A paragraph: one or more lines of inline content.
+  //
+  // The first inlineLine is mandatory (a paragraph must
+  // have content). Continuation lines are separated by
+  // InlineNewline — each newline pops to default_mode,
+  // where the lexer checks for block-level tokens. If
+  // none match, InlineModeStart fires and pushes back to
+  // inline mode for the next line.
+  //
+  // The OPTION on subsequent lines allows InlineNewline
+  // at the end of the paragraph (trailing newline) without
+  // requiring more content. The trailing InlineNewline is
+  // part of the CST but the AST builder strips it during
+  // inline node construction.
+  //
+  // Paragraph boundaries: a BlankLine, a block-level token,
+  // or EOF ends the paragraph. When InlineNewline pops to
+  // default_mode and a BlankLine or block token matches,
+  // the grammar returns to the document rule instead of
+  // continuing the MANY2 loop.
   paragraph = this.RULE("paragraph", () => {
-    this.CONSUME(TextContent);
+    this.SUBRULE(this.inlineLine);
     this.MANY2(() => {
-      this.CONSUME2(Newline);
-      this.CONSUME2(TextContent);
-    });
-    this.OPTION2(() => {
-      this.CONSUME3(Newline);
+      this.CONSUME(InlineNewline);
+      this.OPTION(() => {
+        this.SUBRULE2(this.inlineLine);
+      });
     });
   });
 }

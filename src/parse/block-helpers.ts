@@ -186,7 +186,7 @@ export function extractBlockCommentContent(
 }
 
 /**
- * Merges TextContent and IndentedLine tokens into a single
+ * Merges inline text and IndentedLine tokens into a single
  * array sorted by source position. This preserves the original
  * line order when both token types appear in a list item.
  */
@@ -216,7 +216,7 @@ export function buildBaseFlatItem(
     indentedTokens?: IToken[];
   } = {},
 ): FlatListItem {
-  // Merge TextContent and IndentedLine tokens in source order.
+  // Merge inline text and IndentedLine tokens in source order.
   // IndentedLine images have leading whitespace that must be
   // stripped so the AST value contains clean text.
   const allTokens = mergeTextTokens(textTokens, options.indentedTokens ?? []);
