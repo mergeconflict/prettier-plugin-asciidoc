@@ -11,16 +11,13 @@
  */
 import type { IToken } from "chevrotain";
 import type { LinkNode, XrefNode, InlineAnchorNode } from "../ast.js";
-import { EMPTY, NEXT } from "../constants.js";
+import { EMPTY, FIRST, NEXT, NOT_FOUND } from "../constants.js";
 import { tokenStartLocation, tokenEndLocation } from "./positions.js";
 
 // Number of characters in `<<`, `>>`, `[[`, or `]]`.
 const BRACKET_PAIR_LEN = 2;
 
 // ── String splitting helpers ────────────────────────────────
-
-// Sentinel for indexOf when no match is found.
-const NOT_FOUND = -1;
 
 /**
  * Split a string at the first `[` to separate the target
@@ -31,6 +28,9 @@ const NOT_FOUND = -1;
  * (link:, mailto:, xref: callers strip their prefix first).
  * The input is always expected to end with `]` when a bracket
  * is present — the trailing `]` is consumed by the slice.
+ *
+ * Precondition: `image` ends with `]` (guaranteed by the
+ * grammar's LinkMacro / ImageMacro token pattern).
  * @param image - String to split; either a full token image
  *   or the portion after a macro prefix has been removed
  * @returns Tuple of [beforeBracket, insideBracket].
@@ -42,7 +42,7 @@ function splitAtBracket(image: string): [string, string | undefined] {
   if (bracketIndex === NOT_FOUND) {
     return [image, undefined];
   }
-  const before = image.slice(EMPTY, bracketIndex);
+  const before = image.slice(FIRST, bracketIndex);
   // Slice between `[` and the final `]`.
   const inside = image.slice(bracketIndex + NEXT, -NEXT);
   return [before, inside];
@@ -94,8 +94,9 @@ export function makeLinkFromUrl(token: IToken): LinkNode {
  *
  * Strips the macro prefix to extract the target, then
  * splits at `[` for optional display text. For `mailto:`
- * tokens the full `mailto:addr` is preserved as the
- * target so the printer can reproduce the original form.
+ * tokens the scheme is stripped during parsing and
+ * reconstructed before storing the target, so the printer
+ * can reproduce the original `mailto:addr` form.
  * @param token - LinkMacro or MailtoLink token from the
  *   lexer (image starts with `link:` or `mailto:`)
  * @returns LinkNode with form `"macro"`
@@ -149,7 +150,7 @@ export function makeXrefFromShorthand(token: IToken): XrefNode {
   return {
     type: "xref",
     form: "shorthand",
-    target: inner.slice(EMPTY, commaIndex),
+    target: inner.slice(FIRST, commaIndex),
     text: inner.slice(commaIndex + NEXT),
     position: positionOf(token),
   };
@@ -204,7 +205,7 @@ export function makeInlineAnchor(token: IToken): InlineAnchorNode {
   const reftext = inner.slice(commaIndex + NEXT).trimStart();
   return {
     type: "inlineAnchor",
-    id: inner.slice(EMPTY, commaIndex),
+    id: inner.slice(FIRST, commaIndex),
     reftext: reftext.length > EMPTY ? reftext : undefined,
     position: positionOf(token),
   };

@@ -28,7 +28,7 @@ import {
  *   inline-mode grammar rule, one per continuation line
  *   lexed in inline mode. Each node wraps the sequence of
  *   inline tokens for that line.
- * @param inlineNewlineTokens - InlineNewline tokens
+ * @param inlineModeNewlineTokens - InlineNewline tokens
  *   emitted by the lexer's pop-mode rule at the end of
  *   each inline-mode line. These terminate inline mode;
  *   they are separate from defaultModeNewlineTokens
@@ -39,7 +39,7 @@ import {
  *   is stripped before merging.
  * @param defaultModeNewlineTokens - Newline tokens
  *   captured in the default-mode MANY3 continuation
- *   loop. Kept separate from inlineNewlineTokens because
+ *   loop. Kept separate from inlineModeNewlineTokens because
  *   the two lexer modes accumulate them independently;
  *   they are re-typed to InlineNewline before merging so
  *   buildFromTokens handles them uniformly.
@@ -49,7 +49,7 @@ import {
  */
 export function buildInlineNodesWithContinuation(
   inlineLineNodes: CstNode[],
-  inlineNewlineTokens: IToken[],
+  inlineModeNewlineTokens: IToken[],
   indentedLineTokens: IToken[],
   defaultModeNewlineTokens: IToken[],
 ): InlineNode[] {
@@ -60,11 +60,16 @@ export function buildInlineNodesWithContinuation(
   // uniform handling: accumulate as "\n", strip trailing
   // newlines at the end of the item, and skip the structural
   // newline that immediately follows a HardLineBreak.
+  // Shallow copy is safe: Chevrotain tokens are value objects
+  // with no nested mutable state.
   const convertedNewlines = defaultModeNewlineTokens.map((t) => ({
     ...t,
     tokenType: InlineNewline,
   }));
-  const allNewlines = mergeSortedTokens(inlineNewlineTokens, convertedNewlines);
+  const allNewlines = mergeSortedTokens(
+    inlineModeNewlineTokens,
+    convertedNewlines,
+  );
 
   // Phase 1: build the inline-mode portion of the stream.
   // unwrapInlineLines extracts the per-token CstNodes from

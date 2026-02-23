@@ -39,15 +39,16 @@ import {
   NEXT,
   SAFE_DELIMITER_PAD,
 } from "./constants.js";
+import { CHECKBOX_PREFIX_LEN } from "./parse/block-helpers.js";
 import { printInlineNode } from "./print-inline.js";
 import { wordsToFillParts } from "./reflow.js";
 
 const {
   builders: { align, fill, hardline, join },
 } = doc;
-// Index of the second child in a block array. Also serves as
-// the loop increment in joinBlocks — both uses mean "one step
-// from the previous element", so the same constant applies.
+// Index of the second child in a block array (offset 1 from
+// zero). Also serves as the loop increment in joinBlocks
+// (advance by one). Both uses share the numeric value 1.
 const SECOND_CHILD = 1;
 
 /**
@@ -283,15 +284,12 @@ const DELIMITER_CHARS: Record<LeafBlockVariant, string> = {
 // associated with parent-block delimiters (verse/quote → `_`,
 // example → `=`, sidebar → `*`). Used by
 // computeMasqueradeDelimiter when no explicit sourceDelimiter
-// is present on the node — e.g. a verse block that was parsed
-// directly rather than masqueraded from a parent block.
+// is present on the node.
+// These entries exist for defensive completeness; in
+// practice all masquerade variants currently carry a
+// sourceDelimiter (case 1) or use paragraph form
+// (caught before this function is called).
 type MasqueradedVariant = "verse" | "example" | "sidebar" | "quote";
-// In practice none of these are currently reachable: verse
-// and other masquerade variants always carry `sourceDelimiter`
-// when produced by the parser (caught by case 1), or are
-// expressed in paragraph form (caught before calling
-// computeMasqueradeDelimiter). The entries are present for
-// defensive completeness against future parser paths.
 const MASQUERADE_DELIMITER_CHARS: Record<MasqueradedVariant, string> = {
   verse: "_",
   quote: "_",
@@ -529,7 +527,6 @@ function printParentBlock(
   if (node.variant === "open") {
     const delimiter = delimChar.repeat(OPEN_BLOCK_DELIMITER_LENGTH);
     if (node.children.length > EMPTY) {
-      // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
       const children = path.map(print, "children");
       return [
         delimiter,
@@ -555,7 +552,6 @@ function printParentBlock(
   const delimiter = delimChar.repeat(delimLength);
 
   if (node.children.length > EMPTY) {
-    // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
     const children = path.map(print, "children");
     return [
       delimiter,
@@ -631,7 +627,6 @@ function printAdmonition(
   const delimiter = delimChar.repeat(delimLength);
 
   if (node.children.length > EMPTY) {
-    // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
     const children = path.map(print, "children");
     return [
       delimiter,
@@ -698,7 +693,6 @@ type PrintFunction = (path: PrintPath) => Doc;
  * @returns Doc IR for the formatted list.
  */
 function printList(path: PrintPath, print: PrintFunction): Doc {
-  // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
   const items = path.map(print, "children");
   return join(hardline, items);
 }
@@ -784,10 +778,12 @@ function printListItem(
   const checkboxPrefix = formatCheckbox(node.checkbox);
 
   // Continuation lines should align with the text start, which
-  // is marker width + 1 space after the marker character(s).
+  // is marker width + 1 space after the marker character(s),
+  // plus the checkbox prefix width for checklist items.
   const markerWidth = marker.length + MARKER_OFFSET;
+  const checkboxWidth =
+    node.checkbox === undefined ? EMPTY : CHECKBOX_PREFIX_LEN;
 
-  // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
   const printed = path.map(print, "children");
 
   // Separate inline children (text, bold, hardLineBreak, etc.)
@@ -820,7 +816,7 @@ function printListItem(
     marker,
     " ",
     checkboxPrefix,
-    align(markerWidth, fill(inlineParts)),
+    align(markerWidth + checkboxWidth, fill(inlineParts)),
   ]);
 
   return [item, ...nestedListParts];
@@ -832,7 +828,6 @@ const printer: Printer<AnyNode> = {
 
     switch (node.type) {
       case "document": {
-        // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
         const children = path.map(print, "children");
         if (node.children.length > EMPTY) {
           return [joinBlocks(node.children, children), hardline];
@@ -846,7 +841,6 @@ const printer: Printer<AnyNode> = {
         const marker = "=".repeat(node.level + MARKER_OFFSET);
         const headingContent: Doc = [marker, " ", node.heading];
         if (node.children.length > EMPTY) {
-          // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
           const sectionChildren = path.map(print, "children");
           return [
             headingContent,
@@ -895,7 +889,6 @@ const printer: Printer<AnyNode> = {
         // Reflow paragraph text to printWidth using fill. The text
         // children produce word/line pairs; fill packs as many words
         // as possible onto each line before wrapping.
-        // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument, unicorn/prefer-array-flat-map -- AstPath#map, not Array#map; AstPath has no flatMap
         return fill(path.map(print, "children").flat());
       }
       case "list": {

@@ -14,7 +14,7 @@
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("attribute entry parsing", () => {
   // The fundamental contract: `:name: value` must become an attribute
@@ -25,8 +25,7 @@ describe("attribute entry parsing", () => {
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
     expect(child0.name).toBe("source-highlighter");
     expect(child0.value).toBe("rouge");
     expect(child0.unset).toBe(false);
@@ -34,14 +33,13 @@ describe("attribute entry parsing", () => {
 
   // Boolean/flag attributes have no value — just `:toc:`. The parser
   // must distinguish "no value" (undefined) from "empty string value"
-  // to faithfully reproduce the original syntax.
+  // to faithfully reconstruct the original syntax.
   test(":name: with no value parses correctly", () => {
     const document = parse(":toc:\n");
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
     expect(child0.name).toBe("toc");
     expect(child0.value).toBeUndefined();
     expect(child0.unset).toBe(false);
@@ -55,23 +53,21 @@ describe("attribute entry parsing", () => {
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
     expect(child0.name).toBe("toc");
     expect(child0.value).toBeUndefined();
     expect(child0.unset).toBe("prefix");
   });
 
   // The suffix unset form `:name!:` is an alternative syntax. The
-  // parser tracks which form was used so the printer can reproduce
-  // the author's style choice.
+  // parser tracks which form was used so the printer can
+  // reconstruct the author's original syntax.
   test(":name!: (suffix unset) parses correctly", () => {
     const document = parse(":toc!:\n");
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
     expect(child0.name).toBe("toc");
     expect(child0.value).toBeUndefined();
     expect(child0.unset).toBe("suffix");
@@ -99,10 +95,8 @@ describe("attribute entry parsing", () => {
     const { children } = document;
     expect(children).toHaveLength(2);
     const [child0, child1] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
-    if (child1.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
+    narrow(child1, "attributeEntry");
     expect(child0.name).toBe("author");
     expect(child0.value).toBe("Jane");
     expect(child1.name).toBe("revdate");
@@ -127,7 +121,7 @@ describe("attribute entry parsing", () => {
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "section") unreachable("expected section");
+    narrow(child0, "section");
     expect(child0.children).toHaveLength(2);
     expect(child0.children[0].type).toBe("attributeEntry");
     expect(child0.children[1].type).toBe("paragraph");
@@ -141,8 +135,7 @@ describe("attribute entry parsing", () => {
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
     expect(child0.name).toBe("_my-attr2");
     expect(child0.value).toBe("value");
   });
@@ -155,8 +148,7 @@ describe("attribute entry parsing", () => {
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
     expect(child0.name).toBe("key");
     expect(child0.value).toBe("spaced value");
   });
@@ -170,11 +162,27 @@ describe("attribute entry parsing", () => {
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
     expect(child0.name).toBe("experimental");
     expect(child0.unset).toBe("prefix");
     expect(child0.value).toBe("value");
+  });
+
+  // `:key: ` (colon-space-newline) is subtly different from `:key:`
+  // (colon-newline). In the regex, `\s?` consumes the space and
+  // `(?<value>.+)?` has nothing left to match, so the `value`
+  // group is `undefined` (not `""`). This matches the no-value
+  // case — both produce `undefined`. The distinction matters
+  // because an empty-string value would be printed as `:key: `
+  // (with a trailing space), which Prettier would then strip.
+  test(":key: with trailing space is treated as no value", () => {
+    const document = parse(":key: \n");
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    narrow(child0, "attributeEntry");
+    expect(child0.name).toBe("key");
+    expect(child0.value).toBeUndefined();
   });
 
   // A value that is only whitespace (`:key:   `) should be treated
@@ -187,8 +195,7 @@ describe("attribute entry parsing", () => {
     const { children } = document;
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "attributeEntry")
-      unreachable("expected attributeEntry");
+    narrow(child0, "attributeEntry");
     expect(child0.name).toBe("key");
     expect(child0.value).toBeUndefined();
   });

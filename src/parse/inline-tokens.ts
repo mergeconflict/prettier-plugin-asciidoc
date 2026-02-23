@@ -9,7 +9,7 @@
  *    tokens are captured outside CstNodes by the lexer's multi-mode
  *    design; they must be merged back in before node construction.
  *
- * 2. Flat text: `inlineLinesToTextTokens` (+ `inlineCstToTextTokens`)
+ * 2. Flat text: `inlineLinesToTextTokens`
  *    produces one synthetic IToken per source line whose `image` is
  *    the joined text. Used by callers (admonitions, list items) that
  *    only need raw text rather than a structured inline tree.
@@ -76,15 +76,15 @@ export function unwrapInlineLines(inlineLineNodes: CstNode[]): CstNode[] {
  * by source offset. This produces the single interleaved
  * token stream that downstream inline processing expects.
  * @param inlineTokenNodes - CstNodes from the `inlineToken`
- *   OR rule, each containing exactly one matched alternative.
- * @param inlineNewlineTokens - Newline tokens captured
+ *   grammar rule (each node wraps one matched alternative).
+ * @param inlineModeNewlineTokens - Newline tokens captured
  *   separately by the lexer (not inside CstNodes) that must
  *   be merged back into the stream.
  * @returns Merged token array sorted by `startOffset`.
  */
 export function flattenInlineTokens(
   inlineTokenNodes: CstNode[],
-  inlineNewlineTokens: IToken[],
+  inlineModeNewlineTokens: IToken[],
 ): IToken[] {
   // Collect inline tokens — already in source order because
   // CstNodes appear in parse order and each node contains
@@ -93,7 +93,7 @@ export function flattenInlineTokens(
   for (const node of inlineTokenNodes) {
     // Each CstNode's children is a record whose values are
     // IToken arrays — one per matched alternative in the
-    // `inlineToken` OR rule.
+    // `inlineToken` grammar rule.
     const children = node.children as InlineTokenCstChildren;
     for (const key of INLINE_TOKEN_KEYS) {
       // eslint-disable-next-line @typescript-eslint/prefer-destructuring -- dynamic key access
@@ -108,7 +108,7 @@ export function flattenInlineTokens(
 
   // Both arrays are sorted by startOffset. Merge them in
   // O(n) instead of the previous O(n log n) sort.
-  return mergeSortedTokens(inlineTokens, inlineNewlineTokens);
+  return mergeSortedTokens(inlineTokens, inlineModeNewlineTokens);
 }
 
 /**
@@ -162,29 +162,31 @@ export function mergeSortedTokens(left: IToken[], right: IToken[]): IToken[] {
 }
 
 /**
- * Reconstruct synthetic IToken[] from inline CST nodes, one
- * token per source line. Callers like admonition and list
- * item checkbox detection need flat text rather than a rich
- * inline node tree, so this joins each line's tokens into a
- * single synthetic token whose `image` is the concatenated
- * text.
- * @param inlineTokenNodes - CstNodes from the `inlineToken`
- *   OR rule (already unwrapped from line wrappers).
- * @param inlineNewlineTokens - Newline tokens used to
- *   detect line boundaries when grouping.
+ * Convert `inlineLine` CST nodes to synthetic text-content
+ * tokens (one per line). Unwraps line nodes, flattens their
+ * inline tokens, then groups by line boundaries to produce
+ * one synthetic IToken per source line. Used by list items
+ * and admonitions that store their body as a plain string
+ * rather than an InlineNode[] tree.
+ * @param inlineLineNodes - CstNodes from the `inlineLine`
+ *   subrule, each wrapping `inlineToken` children.
+ * @param inlineModeNewlineTokens - Newline tokens for detecting
+ *   line boundaries during grouping.
  * @returns One synthetic IToken per non-empty source line,
- *   with `image` set to the joined text and `startOffset`/
- *   `endOffset` spanning first-to-last token on that line.
- *   Position spans are preserved so callers can use them for
- *   offset-based range tracking and error recovery.
+ *   with concatenated text in `image` and position spans
+ *   preserved from first-to-last token on that line.
  */
-export function inlineCstToTextTokens(
-  inlineTokenNodes: CstNode[],
-  inlineNewlineTokens: IToken[],
+export function inlineLinesToTextTokens(
+  inlineLineNodes: CstNode[],
+  inlineModeNewlineTokens: IToken[],
 ): IToken[] {
+  const inlineTokenNodes = unwrapInlineLines(inlineLineNodes);
   if (inlineTokenNodes.length === EMPTY) return [];
 
-  const allTokens = flattenInlineTokens(inlineTokenNodes, inlineNewlineTokens);
+  const allTokens = flattenInlineTokens(
+    inlineTokenNodes,
+    inlineModeNewlineTokens,
+  );
 
   // Group tokens by line (split at InlineNewline boundaries).
   // Callers like admonition detection and checkbox parsing
@@ -221,27 +223,4 @@ export function inlineCstToTextTokens(
         endColumn: last.endColumn,
       };
     });
-}
-
-/**
- * Convert `inlineLine` CST nodes to synthetic text-content
- * tokens (one per line). Convenience wrapper that unwraps
- * line nodes and delegates to {@link inlineCstToTextTokens}.
- * Used by list items and admonitions that store their body
- * as a plain string rather than an InlineNode[] tree.
- * @param inlineLineNodes - CstNodes from the `inlineLine`
- *   subrule, each wrapping `inlineToken` children.
- * @param inlineNewlineTokens - Newline tokens for detecting
- *   line boundaries during grouping.
- * @returns One synthetic IToken per non-empty source line,
- *   with concatenated text in `image`.
- */
-export function inlineLinesToTextTokens(
-  inlineLineNodes: CstNode[],
-  inlineNewlineTokens: IToken[],
-): IToken[] {
-  return inlineCstToTextTokens(
-    unwrapInlineLines(inlineLineNodes),
-    inlineNewlineTokens,
-  );
 }

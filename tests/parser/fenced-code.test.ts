@@ -45,6 +45,7 @@ describe("fenced code block parsing", () => {
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("listing");
     expect(block.content).toBe("");
+    expect(block.language).toBeUndefined();
   });
 
   // A fenced block surrounded by blank-line-separated paragraphs
@@ -84,6 +85,17 @@ describe("fenced code block parsing", () => {
     const { children } = parse("```\n----\ncode\n----\n```\n");
     const block = firstDelimitedBlock(children);
     expect(block.content).toBe("----\ncode\n----");
+  });
+
+  // Leading whitespace before the language hint (e.g. "```  rust")
+  // is trimmed by `.trim()` in the AST builder. Validates that
+  // the language field contains only the clean identifier even
+  // when the source has extra spaces between the backticks and
+  // the language name.
+  test("leading whitespace in language hint is trimmed", () => {
+    const { children } = parse("```  rust\nfn main() {}\n```\n");
+    const block = firstDelimitedBlock(children);
+    expect(block.language).toBe("rust");
   });
 
   // Trailing whitespace after the language hint is trimmed via

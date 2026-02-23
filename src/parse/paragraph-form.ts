@@ -74,6 +74,11 @@ const PARAGRAPH_FORM_STYLES: ReadonlyMap<
 // (raw string) are included. Styles that keep the block
 // compound (e.g. `[quote]` on `--`) need no transformation.
 //
+// The two-level structure (parent variant → style → target)
+// is necessary because valid masquerade styles differ per
+// parent block type (e.g. `[verse]` is valid on `____`
+// quote blocks but not `====` example blocks).
+//
 // Outer map: parent block variant → inner map of masquerade
 // style → delimited block variant.
 //
@@ -225,6 +230,9 @@ function extractParentBlockContent(
   // Find the end of the open delimiter line (first newline
   // after the block's start offset).
   const openEnd = sourceText.indexOf("\n", node.position.start.offset);
+  // Defensive: unreachable for valid parser output (a parent
+  // block always has a close delimiter after the open line),
+  // but guards against malformed input.
   if (openEnd < FIRST) {
     return "";
   }
@@ -447,6 +455,9 @@ export function convertParagraphFormBlocks(
             variant: admonitionVariant,
             form: "delimited",
             delimiter: next.variant,
+            // `content` is undefined for admonitions — their
+            // text is in `children` (inline nodes), not raw
+            // string content.
             content: undefined,
             children: next.children,
             position: next.position,

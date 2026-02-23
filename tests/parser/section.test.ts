@@ -1,6 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("section parsing", () => {
   // In AsciiDoc, == is a level-1 section heading (analogous to HTML h2).
@@ -12,7 +12,7 @@ describe("section parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "section") unreachable("expected section");
+    narrow(child0, "section");
     expect(child0.level).toBe(1);
     expect(child0.heading).toBe("Title");
   });
@@ -25,7 +25,7 @@ describe("section parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "section") unreachable("expected section");
+    narrow(child0, "section");
     expect(child0.level).toBe(2);
     expect(child0.heading).toBe("Subsection");
   });
@@ -40,14 +40,15 @@ describe("section parsing", () => {
       const {
         children: [child0],
       } = document;
-      if (child0.type !== "section") unreachable("expected section");
+      narrow(child0, "section");
       expect(child0.level).toBe(equals - 1);
     }
   });
 
   // Paragraphs after a heading belong to that section. The AST builder
   // groups non-section blocks under the preceding section heading.
-  // Without this grouping, the printer couldn't indent or scope content.
+  // Without this grouping, the printer would lose the nesting
+  // context needed for indentation.
   test("section contains child paragraphs", () => {
     const input = "== Title\n\nSome text.\n";
     const document = parse(input);
@@ -55,7 +56,7 @@ describe("section parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "section") unreachable("expected section");
+    narrow(child0, "section");
     expect(child0.children).toHaveLength(1);
     expect(child0.children[0].type).toBe("paragraph");
   });
@@ -71,7 +72,8 @@ describe("section parsing", () => {
   });
 
   // Position tracking on section nodes. The section starts at the == marker,
-  // not at the title text. This is important for Prettier's locStart/locEnd.
+  // not at the title text. This is important for Prettier's locStart/locEnd,
+  // which drive range formatting and cursor tracking.
   test("section has correct position", () => {
     const document = parse("== Title\n");
     const {
@@ -90,7 +92,7 @@ describe("section parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "section") unreachable("expected section");
+    narrow(child0, "section");
     expect(child0.heading).toBe("Extra Spaces");
   });
 
@@ -113,13 +115,13 @@ describe("section nesting", () => {
     const {
       children: [parent],
     } = parse("== Parent\n\n=== Child\n");
-    if (parent.type !== "section") unreachable("expected section");
+    narrow(parent, "section");
     expect(parent.heading).toBe("Parent");
     expect(parent.children).toHaveLength(1);
     const {
       children: [child],
     } = parent;
-    if (child.type !== "section") unreachable("expected section");
+    narrow(child, "section");
     expect(child.heading).toBe("Child");
   });
 
@@ -129,14 +131,14 @@ describe("section nesting", () => {
     const {
       children: [sectionA, sectionC],
     } = parse("== A\n\n=== B\n\n== C\n");
-    if (sectionA.type !== "section") unreachable("expected section");
-    if (sectionC.type !== "section") unreachable("expected section");
+    narrow(sectionA, "section");
+    narrow(sectionC, "section");
     expect(sectionA.heading).toBe("A");
     expect(sectionA.children).toHaveLength(1);
     const {
       children: [childB],
     } = sectionA;
-    if (childB.type !== "section") unreachable("expected section");
+    narrow(childB, "section");
     expect(childB.heading).toBe("B");
     expect(sectionC.heading).toBe("C");
   });
@@ -147,14 +149,14 @@ describe("section nesting", () => {
     const {
       children: [parent],
     } = parse("== A\n\n=== B\n\n=== C\n");
-    if (parent.type !== "section") unreachable("expected section");
+    narrow(parent, "section");
     expect(parent.children).toHaveLength(2);
     const {
       children: [childB, childC],
     } = parent;
-    if (childB.type !== "section") unreachable("expected section");
+    narrow(childB, "section");
     expect(childB.heading).toBe("B");
-    if (childC.type !== "section") unreachable("expected section");
+    narrow(childC, "section");
     expect(childC.heading).toBe("C");
   });
 
@@ -163,19 +165,19 @@ describe("section nesting", () => {
     const {
       children: [sectionA],
     } = parse("== A\n\n=== B\n\n==== C\n");
-    if (sectionA.type !== "section") unreachable("expected section");
+    narrow(sectionA, "section");
     expect(sectionA.heading).toBe("A");
     expect(sectionA.children).toHaveLength(1);
     const {
       children: [sectionB],
     } = sectionA;
-    if (sectionB.type !== "section") unreachable("expected section");
+    narrow(sectionB, "section");
     expect(sectionB.heading).toBe("B");
     expect(sectionB.children).toHaveLength(1);
     const {
       children: [sectionC],
     } = sectionB;
-    if (sectionC.type !== "section") unreachable("expected section");
+    narrow(sectionC, "section");
     expect(sectionC.heading).toBe("C");
   });
 });

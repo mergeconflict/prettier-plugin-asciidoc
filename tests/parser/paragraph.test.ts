@@ -2,6 +2,7 @@ import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { ParagraphNode } from "../../src/ast.js";
 import { asParagraph } from "../helpers.js";
+import { narrow } from "../../src/unreachable.js";
 
 /**
  * Extracts the raw text value from a paragraph's first
@@ -14,9 +15,7 @@ function paragraphText(node: ParagraphNode): string {
   const {
     children: [child],
   } = node;
-  if (child.type !== "text") {
-    throw new Error(`Expected text node, got ${child.type}`);
-  }
+  narrow(child, "text");
   return child.value;
 }
 

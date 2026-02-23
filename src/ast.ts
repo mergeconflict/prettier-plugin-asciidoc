@@ -527,9 +527,11 @@ export interface AdmonitionNode extends Node {
   /** Node discriminant. */
   type: "admonition";
   /**
-   * Admonition label (lowercase): `"note"`, `"tip"`,
-   * `"important"`, `"caution"`, or `"warning"`. The
-   * printer uppercases this for output.
+   * Admonition label (lowercase). The five standard values
+   * are `"note"`, `"tip"`, `"important"`, `"caution"`, and
+   * `"warning"`, but the AsciiDoc spec allows custom
+   * variants (e.g. `"exercise"`). Typed as `string` for
+   * extensibility.
    */
   variant: string;
   /**

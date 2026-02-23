@@ -31,7 +31,6 @@ import type {
   ParagraphNode,
   ParentBlockNode,
   SectionNode,
-  TextNode,
   ThematicBreakNode,
 } from "../../src/ast.js";
 import type {
@@ -245,19 +244,15 @@ function convertList(node: ListNode): AsgList {
 /**
  * Converts a ListItemNode to ASG list item format with
  * the marker and principal (inline content).
- * NOTE: only TextNodes are passed to convertInlines; all
- * other inline types (bold, italic, links, etc.) and
- * nested ListNodes are filtered out. This is a known gap
- * — the filter should be `child.type !== "list"` to pass
- * all InlineNodes to convertInlines rather than only
- * plain text nodes.
+ * Nested ListNodes are filtered out so only InlineNode
+ * children are passed to convertInlines.
  * @param node - list item AST node
  * @param marker - the list marker string (e.g. "*")
  * @returns ASG list item block
  */
 function convertListItem(node: ListItemNode, marker: string): AsgListItem {
   const inlines = node.children.filter(
-    (child): child is TextNode => child.type === "text",
+    (child): child is InlineNode => child.type !== "list",
   );
   return {
     name: "listItem",
@@ -540,29 +535,16 @@ export function toASG(document: DocumentNode): AsgDocument {
   if (header !== undefined) {
     const { title: titleNode, attributes, headerEndLocation } = header;
     const { position: titlePosition } = titleNode;
-    // Document title is "= Title", so the text starts 2 chars in
-    // (level 0 → markerWidth = 0+2 = 2). This mirrors the logic
-    // in headingTitleInlines() for section headings.
-    const titleTextStart: Location = {
-      offset: titlePosition.start.offset + 2,
-      line: titlePosition.start.line,
-      column: titlePosition.start.column + 2,
-    };
-    const titleTextEnd: Location = {
-      offset: titleTextStart.offset + titleNode.title.length,
-      line: titlePosition.start.line,
-      column: titleTextStart.column + titleNode.title.length,
-    };
+    // The document title is level 0, so we can reuse the
+    // section-heading helper directly.
+    const titleInlines = headingTitleInlines(
+      titlePosition.start,
+      0,
+      titleNode.title,
+    );
     result.attributes = attributes;
     result.header = {
-      title: [
-        {
-          name: "text",
-          type: "string",
-          value: titleNode.title,
-          location: locationFromPair(titleTextStart, titleTextEnd),
-        },
-      ],
+      title: titleInlines,
       location: locationFromPair(titlePosition.start, headerEndLocation),
     };
   }

@@ -30,7 +30,7 @@ const DELIMITER_CHARS = new Set(".=*-+/'<_");
 
 // Subset of delimiter chars whose lexer patterns do NOT
 // require end-of-line, so `====text` is consumed as a block
-// open token + verbatim content. The threshold for each char
+// open token + the remaining line text. The threshold for each char
 // in this set is MIN_DELIMITER_LENGTH. (Fenced code backticks
 // use a shorter prefix and are handled separately.)
 const PREFIX_DELIMITER_CHARS = new Set(".-+=*/");
@@ -40,7 +40,7 @@ const BLOCK_TITLE = /^\.[^ .]/v;
 const FENCED_CODE_PREFIX = "```";
 const SPECIFIC_PATTERNS = [
   /^<(?:\d+|\.)>$/v, // callout list marker: <1>, <.>
-  /^:[!]?[A-Za-z_][\w\u002D]*[!]?:$/v, // attribute entry: :name:
+  /^:[!]?[A-Za-z_][\w\-]*[!]?:$/v, // attribute entry: :name:
   /^(?:NOTE|TIP|IMPORTANT|CAUTION|WARNING):$/v, // admonition
   /^\[[^\]]*\]$/v, // block attribute list: [source]
 ];
@@ -67,6 +67,8 @@ function isBlockSyntaxAtLineStart(word: string): boolean {
     return true;
   }
 
+  // Callers guarantee `word` is non-empty, so `first` is
+  // always a string (never undefined).
   const [first] = word;
   // Pure delimiter-char word: every character is the same
   // delimiter char. Covers section markers (==), list markers
@@ -87,6 +89,9 @@ function isBlockSyntaxAtLineStart(word: string): boolean {
   // leading delimiter chars and enters a verbatim mode.
   if (
     PREFIX_DELIMITER_CHARS.has(first) &&
+    // Strict `>`: a word of exactly MIN_DELIMITER_LENGTH
+    // identical chars (e.g. "----") is already caught by the
+    // isRepeatedChar branch above.
     word.length > MIN_DELIMITER_LENGTH &&
     word.startsWith(first.repeat(MIN_DELIMITER_LENGTH))
   ) {

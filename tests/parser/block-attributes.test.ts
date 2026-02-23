@@ -19,7 +19,7 @@
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("block attribute list parsing", () => {
   // The fundamental case: a positional attribute list like
@@ -31,8 +31,7 @@ describe("block attribute list parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockAttributeList")
-      unreachable("expected blockAttributeList");
+    narrow(child0, "blockAttributeList");
     expect(child0.value).toBe("source,ruby");
   });
 
@@ -43,8 +42,7 @@ describe("block attribute list parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockAttributeList")
-      unreachable("expected blockAttributeList");
+    narrow(child0, "blockAttributeList");
     expect(child0.value).toBe("#myid");
   });
 
@@ -55,8 +53,7 @@ describe("block attribute list parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockAttributeList")
-      unreachable("expected blockAttributeList");
+    narrow(child0, "blockAttributeList");
     expect(child0.value).toBe(".role");
   });
 
@@ -69,8 +66,7 @@ describe("block attribute list parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockAttributeList")
-      unreachable("expected blockAttributeList");
+    narrow(child0, "blockAttributeList");
     expect(child0.value).toBe("#id.role%option");
   });
 
@@ -81,8 +77,7 @@ describe("block attribute list parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockAttributeList")
-      unreachable("expected blockAttributeList");
+    narrow(child0, "blockAttributeList");
     expect(child0.value).toBe("start=7");
   });
 
@@ -93,8 +88,7 @@ describe("block attribute list parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockAttributeList")
-      unreachable("expected blockAttributeList");
+    narrow(child0, "blockAttributeList");
     expect(child0.value).toBe("abstract");
   });
 
@@ -135,13 +129,12 @@ describe("block attribute list parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockAttributeList")
-      unreachable("expected blockAttributeList");
+    narrow(child0, "blockAttributeList");
     expect(child0.value).toBe("");
   });
 });
 
-describe("standalone anchor parsing", () => {
+describe("anchor parsing", () => {
   // `[[anchor-id]]` on its own line is lexed as an InlineAnchor
   // token inside inline mode. Because there is no dedicated
   // block-level anchor token, it falls through to paragraph
@@ -152,12 +145,12 @@ describe("standalone anchor parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    narrow(child0, "paragraph");
     expect(child0.children).toHaveLength(1);
     const {
       children: [anchor0],
     } = child0;
-    if (anchor0.type !== "inlineAnchor") unreachable("expected inlineAnchor");
+    narrow(anchor0, "inlineAnchor");
     expect(anchor0.id).toBe("anchor-id");
     expect(anchor0.reftext).toBeUndefined();
   });
@@ -171,12 +164,12 @@ describe("standalone anchor parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    narrow(child0, "paragraph");
     expect(child0.children).toHaveLength(1);
     const {
       children: [anchor0],
     } = child0;
-    if (anchor0.type !== "inlineAnchor") unreachable("expected inlineAnchor");
+    narrow(anchor0, "inlineAnchor");
     expect(anchor0.id).toBe("my-id");
     expect(anchor0.reftext).toBe("My Reference Text");
   });
@@ -190,7 +183,7 @@ describe("standalone anchor parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    narrow(child0, "paragraph");
     // Anchor is first child; text node(s) follow in the same paragraph.
     expect(child0.children[0].type).toBe("inlineAnchor");
     expect(child0.children.length).toBeGreaterThan(1);
@@ -203,7 +196,7 @@ describe("standalone anchor parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    narrow(child0, "paragraph");
     expect(child0.children[0].position.start.offset).toBe(0);
     expect(child0.children[0].position.start.line).toBe(1);
     expect(child0.children[0].position.start.column).toBe(1);
@@ -221,7 +214,7 @@ describe("block title parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockTitle") unreachable("expected blockTitle");
+    narrow(child0, "blockTitle");
     expect(child0.title).toBe("My Title");
   });
 
@@ -286,7 +279,7 @@ describe("block title parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "blockTitle") unreachable("expected blockTitle");
+    narrow(child0, "blockTitle");
     expect(child0.title).toBe("Title: a `code` example");
   });
 });
@@ -302,7 +295,7 @@ describe("combined block metadata", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    narrow(child0, "paragraph");
     expect(child0.children).toHaveLength(1);
     expect(child0.children[0].type).toBe("inlineAnchor");
     expect(document.children[1].type).toBe("blockTitle");

@@ -15,11 +15,8 @@ import type {
   PassthroughNode,
   HardLineBreakNode,
 } from "../ast.js";
-import { EMPTY, NEXT } from "../constants.js";
+import { EMPTY, NEXT, NOT_FOUND } from "../constants.js";
 import { tokenStartLocation, tokenEndLocation } from "./positions.js";
-
-// Sentinel for indexOf when no match is found.
-const NOT_FOUND = -1;
 
 // ── String splitting helpers ────────────────────────────────
 

@@ -14,8 +14,9 @@ export const EMPTY = 0;
 // First element of an array: `tokens[FIRST]`.
 export const FIRST = 0;
 
-// AsciiDoc section levels are 0-based, but marker strings start at 2
-// characters ("==" for level 0). MARKER_OFFSET bridges the two:
+// AsciiDoc section levels start at 1, but marker strings start
+// at 2 characters ("==" for level 1). MARKER_OFFSET bridges
+// the two:
 // - parsing:  level = markers.length - MARKER_OFFSET
 // - printing: marker = "=".repeat(level + MARKER_OFFSET)
 export const MARKER_OFFSET = 1;
@@ -24,6 +25,9 @@ export const MARKER_OFFSET = 1;
 export const LAST_ELEMENT = -1;
 
 // Offset to the next element in a sequential scan.
+// Also used as `length - NEXT` to get the last-element index
+// when `.at(LAST_ELEMENT)` can't be used (e.g. ESLint
+// `prefer-destructuring` contexts). See inline-tokens.ts.
 export const NEXT = 1;
 
 // Width of single-character delimiters stripped via
@@ -61,3 +65,10 @@ export const FIRST_COLUMN = 1;
 // boundaries inside delimited blocks — the newline after the open
 // delimiter and before the close delimiter is not part of the content.
 export const NEWLINE_LENGTH = 1;
+
+// Sentinel returned by indexOf/findIndex when no match exists.
+export const NOT_FOUND = -1;
+
+// Sentinel for auto-numbered callout markers (`<.>`). The
+// value 0 is distinct from any explicit callout number (1+).
+export const AUTO_CALLOUT_NUMBER = 0;

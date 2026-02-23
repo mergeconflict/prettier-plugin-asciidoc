@@ -19,6 +19,7 @@ import type {
 } from "../src/ast.js";
 import type { parse } from "../src/parser.js";
 import plugin from "../src/index.js";
+import { narrow } from "../src/unreachable.js";
 
 /**
  * Formats AsciiDoc input through Prettier with optional overrides.
@@ -54,9 +55,7 @@ export function firstList(
   children: ReturnType<typeof parse>["children"],
 ): ListNode {
   const [block] = children;
-  if (block.type !== "list") {
-    throw new Error("Expected list");
-  }
+  narrow(block, "list");
   return block;
 }
 
@@ -69,9 +68,7 @@ export function firstList(
  * @returns the node narrowed to ParagraphNode
  */
 export function asParagraph(node: BlockNode): ParagraphNode {
-  if (node.type !== "paragraph") {
-    throw new Error(`Expected paragraph, got ${node.type}`);
-  }
+  narrow(node, "paragraph");
   return node;
 }
 
@@ -87,8 +84,6 @@ export function firstDelimitedBlock(
   children: ReturnType<typeof parse>["children"],
 ): DelimitedBlockNode {
   const [block] = children;
-  if (block.type !== "delimitedBlock") {
-    throw new Error(`Expected delimitedBlock, got ${block.type}`);
-  }
+  narrow(block, "delimitedBlock");
   return block;
 }

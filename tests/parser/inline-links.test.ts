@@ -7,7 +7,7 @@ import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { InlineNode } from "../../src/ast.js";
 import { asParagraph } from "../helpers.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 /**
  * Parses AsciiDoc input and returns the inline nodes of
@@ -26,7 +26,7 @@ describe("inline links — bare URLs", () => {
     const nodes = inlineNodes("https://example.com\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "link") unreachable("expected link");
+    narrow(node0, "link");
     expect(node0.target).toBe("https://example.com");
     expect(node0.text).toBeUndefined();
   });
@@ -35,7 +35,7 @@ describe("inline links — bare URLs", () => {
     const nodes = inlineNodes("http://example.com\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "link") unreachable("expected link");
+    narrow(node0, "link");
     expect(node0.target).toBe("http://example.com");
     expect(node0.text).toBeUndefined();
   });
@@ -44,7 +44,7 @@ describe("inline links — bare URLs", () => {
     const nodes = inlineNodes("https://example.com/path/to/page\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "link") unreachable("expected link");
+    narrow(node0, "link");
     expect(node0.target).toBe("https://example.com/path/to/page");
   });
 
@@ -52,9 +52,9 @@ describe("inline links — bare URLs", () => {
     const nodes = inlineNodes("Visit https://example.com today\n");
     expect(nodes).toHaveLength(3);
     const [node0, node1, node2] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
-    if (node1.type !== "link") unreachable("expected link");
-    if (node2.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
+    narrow(node1, "link");
+    narrow(node2, "text");
     expect(node0.value).toBe("Visit ");
     expect(node1.target).toBe("https://example.com");
     expect(node1.text).toBeUndefined();
@@ -67,7 +67,7 @@ describe("inline links — URLs with display text", () => {
     const nodes = inlineNodes("https://example.com[Example Site]\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "link") unreachable("expected link");
+    narrow(node0, "link");
     expect(node0.target).toBe("https://example.com");
     expect(node0.text).toBe("Example Site");
   });
@@ -77,7 +77,7 @@ describe("inline links — URLs with display text", () => {
     expect(nodes).toHaveLength(3);
     expect(nodes[0].type).toBe("text");
     const [, node1] = nodes;
-    if (node1.type !== "link") unreachable("expected link");
+    narrow(node1, "link");
     expect(nodes[2].type).toBe("text");
     expect(node1.target).toBe("https://example.com");
     expect(node1.text).toBe("here");
@@ -89,7 +89,7 @@ describe("inline links — link macro", () => {
     const nodes = inlineNodes("link:path/to/file.html[Link Text]\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "link") unreachable("expected link");
+    narrow(node0, "link");
     expect(node0.target).toBe("path/to/file.html");
     expect(node0.text).toBe("Link Text");
   });
@@ -99,7 +99,7 @@ describe("inline links — link macro", () => {
     expect(nodes).toHaveLength(3);
     expect(nodes[0].type).toBe("text");
     const [, node1] = nodes;
-    if (node1.type !== "link") unreachable("expected link");
+    narrow(node1, "link");
     expect(nodes[2].type).toBe("text");
     expect(node1.target).toBe("docs/guide.html");
     expect(node1.text).toBe("the guide");
@@ -109,7 +109,7 @@ describe("inline links — link macro", () => {
     const nodes = inlineNodes("link:path/to/file.html[]\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "link") unreachable("expected link");
+    narrow(node0, "link");
     expect(node0.target).toBe("path/to/file.html");
     expect(node0.text).toBeUndefined();
     expect(node0.form).toBe("macro");
@@ -125,7 +125,7 @@ describe("inline links — mailto", () => {
     const nodes = inlineNodes("mailto:user@example.com[Email]\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "link") unreachable("expected link");
+    narrow(node0, "link");
     expect(node0.target).toBe("mailto:user@example.com");
     expect(node0.text).toBe("Email");
   });
@@ -134,9 +134,10 @@ describe("inline links — mailto", () => {
     const nodes = inlineNodes("mailto:user@example.com[]\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "link") unreachable("expected link");
+    narrow(node0, "link");
     expect(node0.target).toBe("mailto:user@example.com");
     expect(node0.text).toBeUndefined();
+    expect(node0.form).toBe("macro");
   });
 });
 
@@ -145,7 +146,7 @@ describe("inline cross-references", () => {
     const nodes = inlineNodes("<<section-id>>\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "xref") unreachable("expected xref");
+    narrow(node0, "xref");
     expect(node0.target).toBe("section-id");
     expect(node0.text).toBeUndefined();
   });
@@ -154,7 +155,7 @@ describe("inline cross-references", () => {
     const nodes = inlineNodes("<<section-id,Custom Text>>\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "xref") unreachable("expected xref");
+    narrow(node0, "xref");
     expect(node0.target).toBe("section-id");
     expect(node0.text).toBe("Custom Text");
   });
@@ -164,7 +165,7 @@ describe("inline cross-references", () => {
     expect(nodes).toHaveLength(3);
     expect(nodes[0].type).toBe("text");
     const [, node1] = nodes;
-    if (node1.type !== "xref") unreachable("expected xref");
+    narrow(node1, "xref");
     expect(nodes[2].type).toBe("text");
     expect(node1.target).toBe("section-id");
   });
@@ -173,7 +174,7 @@ describe("inline cross-references", () => {
     const nodes = inlineNodes("xref:other-doc.adoc#anchor[Text]\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "xref") unreachable("expected xref");
+    narrow(node0, "xref");
     expect(node0.target).toBe("other-doc.adoc#anchor");
     expect(node0.text).toBe("Text");
   });
@@ -185,7 +186,7 @@ describe("inline cross-references", () => {
     expect(nodes).toHaveLength(3);
     expect(nodes[0].type).toBe("text");
     const [, node1] = nodes;
-    if (node1.type !== "xref") unreachable("expected xref");
+    narrow(node1, "xref");
     expect(nodes[2].type).toBe("text");
     expect(node1.target).toBe("guide.adoc#setup");
     expect(node1.text).toBe("the setup guide");
@@ -195,7 +196,7 @@ describe("inline cross-references", () => {
     const nodes = inlineNodes("xref:guide.adoc#setup[]\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "xref") unreachable("expected xref");
+    narrow(node0, "xref");
     expect(node0.target).toBe("guide.adoc#setup");
     expect(node0.text).toBeUndefined();
     expect(node0.form).toBe("macro");
@@ -208,7 +209,7 @@ describe("inline cross-references", () => {
     const nodes = inlineNodes("<<section-id,text with, commas>>\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "xref") unreachable("expected xref");
+    narrow(node0, "xref");
     expect(node0.target).toBe("section-id");
     expect(node0.text).toBe("text with, commas");
     expect(node0.form).toBe("shorthand");
@@ -224,7 +225,7 @@ describe("inline anchors", () => {
     expect(nodes).toHaveLength(3);
     expect(nodes[0].type).toBe("text");
     const [, node1] = nodes;
-    if (node1.type !== "inlineAnchor") unreachable("expected inlineAnchor");
+    narrow(node1, "inlineAnchor");
     expect(nodes[2].type).toBe("text");
     expect(node1.id).toBe("inline-anchor");
     expect(node1.reftext).toBeUndefined();
@@ -238,7 +239,7 @@ describe("inline anchors", () => {
     expect(nodes).toHaveLength(3);
     expect(nodes[0].type).toBe("text");
     const [, node1] = nodes;
-    if (node1.type !== "inlineAnchor") unreachable("expected inlineAnchor");
+    narrow(node1, "inlineAnchor");
     expect(nodes[2].type).toBe("text");
     expect(node1.id).toBe("term-id");
     expect(node1.reftext).toBe("Term Display Text");
@@ -249,7 +250,7 @@ describe("inline anchors", () => {
     expect(nodes).toHaveLength(3);
     expect(nodes[0].type).toBe("text");
     const [, node1] = nodes;
-    if (node1.type !== "inlineAnchor") unreachable("expected inlineAnchor");
+    narrow(node1, "inlineAnchor");
     expect(nodes[2].type).toBe("text");
     expect(node1.id).toBe("anchor-here");
   });
@@ -260,13 +261,13 @@ describe("inline links — mixed with formatting", () => {
     const nodes = inlineNodes("*bold https://example.com[link]*\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "bold") unreachable("expected bold");
+    narrow(node0, "bold");
     expect(node0.children).toHaveLength(2);
     const {
-      children: [_textChild, linkChild],
+      children: [textChild, linkChild],
     } = node0;
-    expect(_textChild.type).toBe("text");
-    if (linkChild.type !== "link") unreachable("expected link");
+    expect(textChild.type).toBe("text");
+    narrow(linkChild, "link");
     expect(linkChild.target).toBe("https://example.com");
     expect(linkChild.text).toBe("link");
   });
@@ -275,7 +276,7 @@ describe("inline links — mixed with formatting", () => {
     const nodes = inlineNodes("_see <<ref>>_\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "italic") unreachable("expected italic");
+    narrow(node0, "italic");
     expect(node0.children).toHaveLength(2);
     expect(node0.children[0].type).toBe("text");
     expect(node0.children[1].type).toBe("xref");

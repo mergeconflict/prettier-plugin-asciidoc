@@ -19,6 +19,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { DelimitedBlockNode, ParentBlockNode } from "../../src/ast.js";
+import { narrow } from "../../src/unreachable.js";
 
 /**
  * Extracts the child at the given index as a
@@ -33,11 +34,7 @@ function delimitedBlockAt(
   index: number,
 ): DelimitedBlockNode {
   const { [index]: block } = children;
-  if (block.type !== "delimitedBlock") {
-    throw new Error(
-      `Expected delimitedBlock at index ${String(index)}, got ${block.type}`,
-    );
-  }
+  narrow(block, "delimitedBlock");
   return block;
 }
 
@@ -54,11 +51,7 @@ function parentBlockAt(
   index: number,
 ): ParentBlockNode {
   const { [index]: block } = children;
-  if (block.type !== "parentBlock") {
-    throw new Error(
-      `Expected parentBlock at index ${String(index)}, got ${block.type}`,
-    );
-  }
+  narrow(block, "parentBlock");
   return block;
 }
 
@@ -95,6 +88,11 @@ describe("[verse] on quote block (____)", () => {
       "[verse, Carl Sandburg, Fog]\n____\nThe fog comes\non little cat feet.\n____\n",
     );
     expect(children).toHaveLength(2);
+    // The full attribute string including positional params
+    // (author, source) is preserved in the blockAttributeList
+    // value, not in a dedicated field on the verse block.
+    // Attribution is reconstructed from the attribute list at
+    // render time, not stored as structured data.
     expect(children[0].type).toBe("blockAttributeList");
     const block = delimitedBlockAt(children, 1);
     expect(block.variant).toBe("verse");

@@ -142,6 +142,7 @@ const BLOCK_ATTR_LIST_SUFFIX_LEN = 1;
 function buildBlockAttributeList(token: IToken): BlockAttributeListNode {
   const value = token.image.slice(
     BLOCK_ATTR_LIST_PREFIX_LEN,
+    // Negated to slice from the end: -1 drops the trailing `]`.
     -BLOCK_ATTR_LIST_SUFFIX_LEN,
   );
   return {
@@ -192,7 +193,7 @@ function buildBlockTitle(token: IToken): BlockTitleNode {
  * Thematic breaks (`'''`) carry no content -- only
  * source position is preserved so the printer can
  * place the delimiter correctly.
- * @param token - A ThematicBreak token.
+ * @param token - A ThematicBreak token (`'''` or longer).
  * @returns A thematic break node with source position.
  */
 function buildThematicBreak(token: IToken): ThematicBreakNode {
@@ -211,7 +212,7 @@ function buildThematicBreak(token: IToken): ThematicBreakNode {
  * Page breaks (`<<<`) carry no content -- only source
  * position is preserved so the printer can place the
  * delimiter correctly.
- * @param token - A PageBreak token.
+ * @param token - A PageBreak token (`<<<` or longer).
  * @returns A page break node with source position.
  */
 function buildPageBreak(token: IToken): PageBreakNode {

@@ -21,7 +21,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { AdmonitionNode } from "../../src/ast.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 /**
  * Extracts the child at the given index as an
@@ -36,11 +36,7 @@ function admonitionAt(
   index: number,
 ): AdmonitionNode {
   const { [index]: block } = children;
-  if (block.type !== "admonition") {
-    throw new Error(
-      `Expected admonition at index ${String(index)}, got ${block.type}`,
-    );
-  }
+  narrow(block, "admonition");
   return block;
 }
 
@@ -88,6 +84,9 @@ describe("paragraph-form admonitions", () => {
     expect(node.content).toBe("Be careful.");
   });
 
+  // Continuation lines (no blank line between them) are joined
+  // into a single content string separated by \n — the same
+  // joining rule that applies to regular paragraphs.
   test("multi-line paragraph-form admonition", () => {
     const { children } = parse("NOTE: First line\nsecond line\nthird line\n");
     expect(children).toHaveLength(1);
@@ -102,6 +101,10 @@ describe("paragraph-form admonitions", () => {
     expect(node.position.start.line).toBe(1);
     expect(node.position.start.column).toBe(1);
     expect(node.position.start.offset).toBe(0);
+    // "NOTE: Hello." is 12 chars; end offset is exclusive
+    expect(node.position.end.line).toBe(1);
+    expect(node.position.end.column).toBe(13);
+    expect(node.position.end.offset).toBe(12);
   });
 
   test("paragraph-form admonition between paragraphs", () => {
@@ -218,7 +221,7 @@ describe("admonition edge cases", () => {
     expect(children).toHaveLength(2);
     expect(children[0].type).toBe("blockAttributeList");
     const [, child1] = children;
-    if (child1.type !== "admonition") unreachable("expected admonition");
+    narrow(child1, "admonition");
     expect(child1.variant).toBe("exercise");
     expect(child1.form).toBe("delimited");
   });

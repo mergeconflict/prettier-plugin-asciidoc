@@ -2,7 +2,7 @@ import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { InlineNode } from "../../src/ast.js";
 import { asParagraph } from "../helpers.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 /**
  * Parses AsciiDoc input and returns the inline nodes of
@@ -21,12 +21,12 @@ describe("inline formatting — bold", () => {
     const nodes = inlineNodes("*bold*\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "bold") unreachable("expected bold");
+    narrow(node0, "bold");
     expect(node0.children).toHaveLength(1);
     const {
       children: [inner0],
     } = node0;
-    if (inner0.type !== "text") unreachable("expected text");
+    narrow(inner0, "text");
     expect(inner0.value).toBe("bold");
   });
 
@@ -34,15 +34,15 @@ describe("inline formatting — bold", () => {
     const nodes = inlineNodes("un**bold**ed\n");
     expect(nodes).toHaveLength(3);
     const [node0, node1, node2] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
-    if (node1.type !== "bold") unreachable("expected bold");
-    if (node2.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
+    narrow(node1, "bold");
+    narrow(node2, "text");
     expect(node0.value).toBe("un");
     expect(node1.children).toHaveLength(1);
     const {
       children: [boldChild],
     } = node1;
-    if (boldChild.type !== "text") unreachable("expected text");
+    narrow(boldChild, "text");
     expect(boldChild.value).toBe("bold");
     expect(node2.value).toBe("ed");
   });
@@ -53,12 +53,12 @@ describe("inline formatting — italic", () => {
     const nodes = inlineNodes("_italic_\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "italic") unreachable("expected italic");
+    narrow(node0, "italic");
     expect(node0.children).toHaveLength(1);
     const {
       children: [inner0],
     } = node0;
-    if (inner0.type !== "text") unreachable("expected text");
+    narrow(inner0, "text");
     expect(inner0.value).toBe("italic");
   });
 
@@ -78,12 +78,12 @@ describe("inline formatting — monospace", () => {
     const nodes = inlineNodes("`mono`\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "monospace") unreachable("expected monospace");
+    narrow(node0, "monospace");
     expect(node0.children).toHaveLength(1);
     const {
       children: [inner0],
     } = node0;
-    if (inner0.type !== "text") unreachable("expected text");
+    narrow(inner0, "text");
     expect(inner0.value).toBe("mono");
   });
 
@@ -102,12 +102,12 @@ describe("inline formatting — highlight", () => {
     const nodes = inlineNodes("#highlight#\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "highlight") unreachable("expected highlight");
+    narrow(node0, "highlight");
     expect(node0.children).toHaveLength(1);
     const {
       children: [inner0],
     } = node0;
-    if (inner0.type !== "text") unreachable("expected text");
+    narrow(inner0, "text");
     expect(inner0.value).toBe("highlight");
   });
 
@@ -126,9 +126,9 @@ describe("inline formatting — mixed", () => {
     const nodes = inlineNodes("This is *bold* and _italic_\n");
     expect(nodes).toHaveLength(4);
     const [node0, , node2] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(nodes[1].type).toBe("bold");
-    if (node2.type !== "text") unreachable("expected text");
+    narrow(node2, "text");
     expect(nodes[3].type).toBe("italic");
     expect(node0.value).toBe("This is ");
     expect(node2.value).toBe(" and ");
@@ -138,21 +138,25 @@ describe("inline formatting — mixed", () => {
     const nodes = inlineNodes("*_bold italic_*\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "bold") unreachable("expected bold");
+    narrow(node0, "bold");
     expect(node0.children).toHaveLength(1);
     const {
       children: [italicChild],
     } = node0;
-    if (italicChild.type !== "italic") unreachable("expected italic");
+    narrow(italicChild, "italic");
     expect(italicChild.children).toHaveLength(1);
     const {
       children: [textChild],
     } = italicChild;
-    if (textChild.type !== "text") unreachable("expected text");
+    narrow(textChild, "text");
     expect(textChild.value).toBe("bold italic");
   });
 });
 
+// Backslash escapes are tokenised by the pattern in
+// inline-mark-pattern.ts and converted to text nodes by
+// inline-node-builder.ts. The backslash is preserved in the
+// value so the printer can round-trip the escape.
 describe("inline formatting — backslash escapes", () => {
   test("backslash before * prevents bold — produces literal text", () => {
     const nodes = inlineNodes(`${String.raw`\*not bold*`}\n`);
@@ -162,15 +166,17 @@ describe("inline formatting — backslash escapes", () => {
     // produces the same AST.
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(node0.value).toBe(String.raw`\*not bold*`);
   });
 
+  // Same principle as the \* test above: the backslash escape
+  // prevents the _ from opening an italic span.
   test("backslash before _ prevents italic — produces literal text", () => {
     const nodes = inlineNodes(`${String.raw`\_not italic_`}\n`);
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(node0.value).toBe(String.raw`\_not italic_`);
   });
 
@@ -210,13 +216,13 @@ describe("inline formatting — role/style attributes", () => {
     const nodes = inlineNodes("[red]#styled text#\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "highlight") unreachable("expected highlight");
+    narrow(node0, "highlight");
     expect(node0.role).toBe("red");
     expect(node0.children).toHaveLength(1);
     const {
       children: [inner0],
     } = node0;
-    if (inner0.type !== "text") unreachable("expected text");
+    narrow(inner0, "text");
     expect(inner0.value).toBe("styled text");
   });
 
@@ -224,7 +230,7 @@ describe("inline formatting — role/style attributes", () => {
     const nodes = inlineNodes("[.role]#text#\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "highlight") unreachable("expected highlight");
+    narrow(node0, "highlight");
     expect(node0.role).toBe(".role");
   });
 
@@ -232,7 +238,7 @@ describe("inline formatting — role/style attributes", () => {
     const nodes = inlineNodes("[underline]#text#\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "highlight") unreachable("expected highlight");
+    narrow(node0, "highlight");
     expect(node0.role).toBe("underline");
   });
 });
@@ -242,8 +248,7 @@ describe("inline formatting — attribute references", () => {
     const nodes = inlineNodes("{name}\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "attributeReference")
-      unreachable("expected attributeReference");
+    narrow(node0, "attributeReference");
     expect(node0.name).toBe("name");
   });
 
@@ -251,10 +256,9 @@ describe("inline formatting — attribute references", () => {
     const nodes = inlineNodes("See {project-name} for details\n");
     expect(nodes).toHaveLength(3);
     const [node0, node1, node2] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
-    if (node1.type !== "attributeReference")
-      unreachable("expected attributeReference");
-    if (node2.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
+    narrow(node1, "attributeReference");
+    narrow(node2, "text");
     expect(node0.value).toBe("See ");
     expect(node1.name).toBe("project-name");
     expect(node2.value).toBe(" for details");
@@ -264,8 +268,7 @@ describe("inline formatting — attribute references", () => {
     const nodes = inlineNodes("{authors}\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "attributeReference")
-      unreachable("expected attributeReference");
+    narrow(node0, "attributeReference");
     expect(node0.name).toBe("authors");
   });
 
@@ -273,8 +276,7 @@ describe("inline formatting — attribute references", () => {
     const nodes = inlineNodes("{counter:name}\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "attributeReference")
-      unreachable("expected attributeReference");
+    narrow(node0, "attributeReference");
     expect(node0.name).toBe("counter:name");
   });
 
@@ -282,8 +284,7 @@ describe("inline formatting — attribute references", () => {
     const nodes = inlineNodes("{counter2:name}\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "attributeReference")
-      unreachable("expected attributeReference");
+    narrow(node0, "attributeReference");
     expect(node0.name).toBe("counter2:name");
   });
 });
@@ -293,7 +294,7 @@ describe("inline formatting — stray/unmatched marks", () => {
     const nodes = inlineNodes("a * b\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(node0.value).toBe("a * b");
   });
 
@@ -305,7 +306,7 @@ describe("inline formatting — stray/unmatched marks", () => {
     const nodes = inlineNodes("*no closing mark\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(node0.value).toBe("*no closing mark");
   });
 
@@ -316,7 +317,7 @@ describe("inline formatting — stray/unmatched marks", () => {
     // second *, so both are plain text.
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(node0.value).toBe("a*b*c");
   });
 });
@@ -328,12 +329,12 @@ describe("inline formatting — interleaved marks", () => {
     const nodes = inlineNodes("*_foo*_\n");
     expect(nodes).toHaveLength(2);
     const [node0] = nodes;
-    if (node0.type !== "bold") unreachable("expected bold");
+    narrow(node0, "bold");
     expect(node0.children).toHaveLength(1);
     const {
       children: [boldInner],
     } = node0;
-    if (boldInner.type !== "text") unreachable("expected text");
+    narrow(boldInner, "text");
     expect(boldInner.value).toBe("_foo");
     expect(nodes[1].type).toBe("text");
   });
@@ -357,22 +358,22 @@ describe("inline formatting — deep nesting", () => {
     const nodes = inlineNodes("*_`code`_*\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "bold") unreachable("expected bold");
+    narrow(node0, "bold");
     expect(node0.children).toHaveLength(1);
     const {
       children: [italicNode],
     } = node0;
-    if (italicNode.type !== "italic") unreachable("expected italic");
+    narrow(italicNode, "italic");
     expect(italicNode.children).toHaveLength(1);
     const {
       children: [monoNode],
     } = italicNode;
-    if (monoNode.type !== "monospace") unreachable("expected monospace");
+    narrow(monoNode, "monospace");
     expect(monoNode.children).toHaveLength(1);
     const {
       children: [textNode],
     } = monoNode;
-    if (textNode.type !== "text") unreachable("expected text");
+    narrow(textNode, "text");
     expect(textNode.value).toBe("code");
   });
 });
@@ -388,7 +389,7 @@ describe("inline formatting — unconstrained role highlight", () => {
     const nodes = inlineNodes("[role]##text##\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "highlight") unreachable("expected highlight");
+    narrow(node0, "highlight");
     expect(node0.role).toBe("role");
     expect(node0.constrained).toBe(false);
   });
@@ -403,15 +404,15 @@ describe("inline formatting — cross-line spans", () => {
     const nodes = inlineNodes("*bold\nspanning two lines* here.\n");
     expect(nodes).toHaveLength(2);
     const [node0] = nodes;
-    if (node0.type !== "bold") unreachable("expected bold");
+    narrow(node0, "bold");
     expect(node0.children).toHaveLength(1);
     const {
       children: [boldText],
     } = node0;
-    if (boldText.type !== "text") unreachable("expected text");
+    narrow(boldText, "text");
     expect(boldText.value).toBe("bold\nspanning two lines");
     const [, node1] = nodes;
-    if (node1.type !== "text") unreachable("expected text");
+    narrow(node1, "text");
     expect(node1.value).toBe(" here.");
   });
 });
@@ -421,7 +422,7 @@ describe("inline formatting — InlineChar fallback", () => {
     const nodes = inlineNodes("text [ more text\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(node0.value).toBe("text [ more text");
   });
 
@@ -429,7 +430,7 @@ describe("inline formatting — InlineChar fallback", () => {
     const nodes = inlineNodes("text { more text\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(node0.value).toBe("text { more text");
   });
 
@@ -440,7 +441,7 @@ describe("inline formatting — InlineChar fallback", () => {
     const nodes = inlineNodes("[not-a-role] more\n");
     expect(nodes).toHaveLength(1);
     const [node0] = nodes;
-    if (node0.type !== "text") unreachable("expected text");
+    narrow(node0, "text");
     expect(node0.value).toBe("[not-a-role] more");
   });
 });

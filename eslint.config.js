@@ -44,6 +44,15 @@ export default defineConfig(
       "@typescript-eslint/no-unnecessary-condition": "error",
       "@typescript-eslint/strict-boolean-expressions": "error",
       "unicorn/no-null": "error",
+
+      // These rules do pure syntactic matching on method names
+      // (any .map() call, any .flatMap() call) with no type
+      // awareness. They cannot distinguish AstPath#map from
+      // Array#map, producing false positives on every Prettier
+      // path.map(print, "children") call.
+      "unicorn/no-array-callback-reference": "off",
+      "unicorn/no-array-method-this-argument": "off",
+      "unicorn/prefer-array-flat-map": "off",
       "no-console": "error",
 
       // Require JSDoc on exported interfaces/types and their

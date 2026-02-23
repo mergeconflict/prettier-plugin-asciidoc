@@ -39,6 +39,10 @@ export function linkToSource(node: LinkNode): string {
   // Macro form: link:target[text] or mailto:addr[text].
   // For mailto targets, the `mailto:` prefix is part of
   // the target string, so we emit it directly.
+  // Mailto is detected by target inspection because the AST
+  // collapses both `link:` and `mailto:` into form "macro".
+  // If LinkNode.form were extended to distinguish "mailto",
+  // this branch would need updating.
   const isMailto = node.target.startsWith("mailto:");
   if (isMailto) {
     return node.text === undefined

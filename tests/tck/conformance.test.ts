@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parse } from "../../src/parser.js";
 import { toASG, toASGInlines } from "./to-asg.js";
+import { narrow } from "../../src/unreachable.js";
 
 // Root directory for all TCK fixture files.
 const TCK_ROOT = path.resolve(
@@ -36,7 +37,7 @@ function readFixture(relativePath: string): string {
  * @returns the parsed JSON value
  */
 function readExpected(relativePath: string): unknown {
-  return JSON.parse(readFixture(relativePath)) as unknown;
+  return JSON.parse(readFixture(relativePath));
 }
 
 /**
@@ -70,9 +71,7 @@ function expectTCKInlines(fixturePath: string): void {
   const [paragraph] = children;
   // Inline TCK fixtures always wrap their content in a single
   // paragraph — if this throws, the fixture file is malformed.
-  if (paragraph.type !== "paragraph") {
-    throw new Error(`Expected paragraph, got ${paragraph.type}`);
-  }
+  narrow(paragraph, "paragraph");
   // structuredClone for the same reason as in expectTCK.
   const actual = structuredClone(toASGInlines(paragraph.children));
   expect(actual).toStrictEqual(expected);
@@ -156,6 +155,8 @@ describe("TCK conformance: block/sidebar", () => {
   });
 });
 
+// The header is not a block per se, but TCK fixtures file it
+// under `block/header` for organizational convenience.
 describe("TCK conformance: block/header", () => {
   // Attribute entries below the document title (`:icons: font`,
   // `:toc:`) appear in the ASG as `document.attributes`.

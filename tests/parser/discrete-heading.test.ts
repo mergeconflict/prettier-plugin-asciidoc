@@ -1,6 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("discrete heading parsing", () => {
   // A `[discrete]` attribute list followed by a section heading
@@ -15,8 +15,7 @@ describe("discrete heading parsing", () => {
     expect(children).toHaveLength(2);
     expect(children[0].type).toBe("blockAttributeList");
     const [, child1] = children;
-    if (child1.type !== "discreteHeading")
-      unreachable("expected discreteHeading");
+    narrow(child1, "discreteHeading");
     expect(child1.level).toBe(1);
     expect(child1.heading).toBe("Heading");
   });
@@ -39,8 +38,7 @@ describe("discrete heading parsing", () => {
     const { children } = parse("[discrete]\n=== Level 2\n");
     expect(children).toHaveLength(2);
     const [, child1] = children;
-    if (child1.type !== "discreteHeading")
-      unreachable("expected discreteHeading");
+    narrow(child1, "discreteHeading");
     expect(child1.level).toBe(2);
     expect(child1.heading).toBe("Level 2");
   });
@@ -50,8 +48,7 @@ describe("discrete heading parsing", () => {
     const { children } = parse("[discrete]\n==== Level 3\n");
     expect(children).toHaveLength(2);
     const [, child1] = children;
-    if (child1.type !== "discreteHeading")
-      unreachable("expected discreteHeading");
+    narrow(child1, "discreteHeading");
     expect(child1.level).toBe(3);
     expect(child1.heading).toBe("Level 3");
   });
@@ -61,8 +58,7 @@ describe("discrete heading parsing", () => {
     const { children } = parse("[discrete]\n====== Level 5\n");
     expect(children).toHaveLength(2);
     const [, child1] = children;
-    if (child1.type !== "discreteHeading")
-      unreachable("expected discreteHeading");
+    narrow(child1, "discreteHeading");
     expect(child1.level).toBe(5);
     expect(child1.heading).toBe("Level 5");
   });
@@ -75,7 +71,7 @@ describe("discrete heading parsing", () => {
     );
     expect(children).toHaveLength(1);
     const [child0] = children;
-    if (child0.type !== "section") unreachable("expected section");
+    narrow(child0, "section");
     // The section should contain: blockAttributeList, discreteHeading,
     // and paragraph as children.
     expect(child0.children).toHaveLength(3);
@@ -92,6 +88,17 @@ describe("discrete heading parsing", () => {
     const document = parse("== Normal Section\n");
     expect(document.children).toHaveLength(1);
     expect(document.children[0].type).toBe("section");
+  });
+
+  // When [discrete] is followed by a non-heading line (e.g. a plain
+  // paragraph), the attribute list is not consumed by the discrete
+  // heading conversion. Both the attribute list and the paragraph
+  // remain as separate sibling nodes.
+  test("[discrete] not followed by heading is a no-op", () => {
+    const { children } = parse("[discrete]\nJust a paragraph.\n");
+    expect(children).toHaveLength(2);
+    expect(children[0].type).toBe("blockAttributeList");
+    expect(children[1].type).toBe("paragraph");
   });
 
   // An attribute list whose positional attribute is not "discrete"

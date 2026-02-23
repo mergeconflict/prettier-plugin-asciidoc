@@ -18,8 +18,9 @@ import type {
 } from "chevrotain";
 import { EMPTY, NEXT } from "../constants.js";
 
-// Punctuation that counts as a word boundary for constrained
-// inline formatting (single mark like *word*).
+// Punctuation that counts as a formatting boundary for
+// constrained inline formatting (AsciiDoc spec term,
+// distinct from regex \b).
 // prettier-ignore
 const INLINE_BOUNDARY_PUNCTUATION = new Set([
   ",", ";", ":", "!", "?", ".", "(", ")", "[", "]",
@@ -28,7 +29,11 @@ const INLINE_BOUNDARY_PUNCTUATION = new Set([
   // Formatting mark chars are boundaries for each other,
   // enabling nested marks like *_text_* where _ appears
   // immediately after *.
-  "*", "_", "`", "#", "+",
+  "*", "_", "`", "#",
+  // `+` is a passthrough mark character — it acts as a
+  // formatting boundary for adjacent marks but uses a
+  // different token mechanism (not makeInlineMarkPattern).
+  "+",
 ]);
 
 const WHITESPACE_RE = /\s/v;

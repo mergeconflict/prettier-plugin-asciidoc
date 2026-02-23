@@ -96,10 +96,8 @@ export function printInlineNode(
         return [];
       }
       const parts = wordsToFillParts(words);
-      const hasLeadingSpace =
-        node.value.length > EMPTY && /^\s/v.test(node.value);
-      const hasTrailingSpace =
-        node.value.length > EMPTY && /\s$/v.test(node.value);
+      const hasLeadingSpace = /^\s/v.test(node.value);
+      const hasTrailingSpace = /\s$/v.test(node.value);
       if (hasLeadingSpace) {
         parts.unshift(line);
       }
@@ -120,7 +118,6 @@ export function printInlineNode(
       const markMap = { bold: "*", italic: "_", monospace: "`" };
       const { [node.type]: singleMark } = markMap;
       const mark = node.constrained ? singleMark : `${singleMark}${singleMark}`;
-      // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
       const inner = path.map(print, "children");
       return [mark, ...inner, mark];
     }
@@ -132,7 +129,6 @@ export function printInlineNode(
       // inline here, not through the block printer.
       const mark = node.constrained ? "#" : "##";
       const rolePrefix = node.role === undefined ? "" : `[${node.role}]`;
-      // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
       const inner = path.map(print, "children");
       return [rolePrefix, mark, ...inner, mark];
     }

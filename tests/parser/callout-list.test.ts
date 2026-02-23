@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import { firstList } from "../helpers.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("callout list parsing", () => {
   // The simplest case: a single `<1> item` line is a one-item
@@ -40,7 +41,7 @@ describe("callout list parsing", () => {
     const { children } = parse("<1> Hello world\n");
     const list = firstList(children);
     const textNode = list.children[0].children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") throw new Error("Expected text");
+    narrow(textNode, "text");
     expect(textNode.value).toBe("Hello world");
   });
 
@@ -80,7 +81,7 @@ describe("callout list parsing", () => {
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
     const textNode = list.children[0].children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") throw new Error("Expected text");
+    narrow(textNode, "text");
     expect(textNode.value).toContain("First line");
     expect(textNode.value).toContain("second line");
   });

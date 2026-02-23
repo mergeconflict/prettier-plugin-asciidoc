@@ -14,7 +14,7 @@
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("line comment parsing", () => {
   // Verifies the fundamental contract: `// text` becomes a comment node,
@@ -25,7 +25,7 @@ describe("line comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("line");
     expect(child0.value).toBe("this is a comment");
   });
@@ -38,7 +38,7 @@ describe("line comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("line");
     expect(child0.value).toBe("");
   });
@@ -67,7 +67,7 @@ describe("line comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("line");
     expect(child0.value).toBe(`${tab}indented remark`);
   });
@@ -81,8 +81,8 @@ describe("line comment parsing", () => {
     const {
       children: [child0, child1],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
-    if (child1.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
+    narrow(child1, "comment");
     expect(child0.value).toBe("first");
     expect(child1.value).toBe("second");
   });
@@ -120,7 +120,7 @@ describe("line comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "section") unreachable("expected section");
+    narrow(child0, "section");
     expect(child0.children).toHaveLength(2);
     expect(child0.children[0].type).toBe("comment");
     expect(child0.children[1].type).toBe("paragraph");
@@ -138,7 +138,7 @@ describe("block comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("block");
     expect(child0.value).toBe("block content");
   });
@@ -152,7 +152,7 @@ describe("block comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("block");
     expect(child0.value).toBe("");
   });
@@ -167,7 +167,7 @@ describe("block comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("block");
     expect(child0.value).toBe("line one\nline two\nline three");
   });
@@ -182,7 +182,7 @@ describe("block comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("block");
     expect(child0.value).toBe("line one\n\nline three");
   });
@@ -217,7 +217,7 @@ describe("block comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("block");
     expect(child0.value).toBe("content");
   });
@@ -232,7 +232,7 @@ describe("block comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("block");
     expect(child0.value).toBe("content");
   });
@@ -247,7 +247,7 @@ describe("block comment parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "comment") unreachable("expected comment");
+    narrow(child0, "comment");
     expect(child0.commentType).toBe("block");
     expect(child0.value).toBe("content");
   });

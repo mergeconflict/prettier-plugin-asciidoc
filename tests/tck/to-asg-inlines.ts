@@ -78,6 +78,9 @@ export function locationFromPair(start: Location, end: Location): AsgLocation {
  *   rendered/display text
  */
 function inlineNodeToText(node: InlineNode): string {
+  // This closure is recreated on every call to inlineNodeToText.
+  // Acceptable for the shallow trees we see in practice; a
+  // top-level binding would work too but keeps the helper local.
   const childrenToText = (children: InlineNode[]): string =>
     children.map((child) => inlineNodeToText(child)).join("");
   switch (node.type) {
@@ -182,6 +185,9 @@ function inlineNodeToAsg(node: InlineNode): AsgInline[] {
     }
     default: {
       // Fallback: serialise to source text as a literal.
+      // The ASG node is built by picking individual fields
+      // rather than spreading `node`; if Node gains new
+      // fields, they will not propagate here automatically.
       return [
         {
           name: "text" as const,

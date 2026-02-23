@@ -14,6 +14,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { DelimitedBlockNode } from "../../src/ast.js";
+import { narrow } from "../../src/unreachable.js";
 
 /**
  * Extracts the child at the given index as a
@@ -28,11 +29,7 @@ function delimitedBlockAt(
   index: number,
 ): DelimitedBlockNode {
   const { [index]: block } = children;
-  if (block.type !== "delimitedBlock") {
-    throw new Error(
-      `Expected delimitedBlock at index ${String(index)}, got ${block.type}`,
-    );
-  }
+  narrow(block, "delimitedBlock");
   return block;
 }
 
@@ -79,6 +76,7 @@ describe("paragraph-form source/listing blocks", () => {
   test("[source] with multi-line content", () => {
     const { children } = parse("[source]\nline 1\nline 2\nline 3\n");
     expect(children).toHaveLength(2);
+    expect(children[0].type).toBe("blockAttributeList");
     const block = delimitedBlockAt(children, 1);
     expect(block.content).toBe("line 1\nline 2\nline 3");
   });
@@ -131,7 +129,11 @@ describe("paragraph-form verse blocks", () => {
       "[verse, Robert Frost, Fire and Ice]\nSome say the world will end in fire,\nSome say in ice.\n",
     );
     expect(children).toHaveLength(2);
+    // The blockAttributeList at children[0] should preserve
+    // the full attribute string including positional params.
     expect(children[0].type).toBe("blockAttributeList");
+    if (children[0].type !== "blockAttributeList") return;
+    expect(children[0].value).toBe("verse, Robert Frost, Fire and Ice");
     const block = delimitedBlockAt(children, 1);
     expect(block.variant).toBe("verse");
     expect(block.form).toBe("paragraph");
@@ -161,7 +163,11 @@ describe("paragraph-form quote blocks", () => {
       "[quote, Shakespeare, Hamlet]\nTo be or not to be.\n",
     );
     expect(children).toHaveLength(2);
+    // The blockAttributeList at children[0] should preserve
+    // the full attribute string including positional params.
     expect(children[0].type).toBe("blockAttributeList");
+    if (children[0].type !== "blockAttributeList") return;
+    expect(children[0].value).toBe("quote, Shakespeare, Hamlet");
     const block = delimitedBlockAt(children, 1);
     expect(block.variant).toBe("quote");
     expect(block.form).toBe("paragraph");

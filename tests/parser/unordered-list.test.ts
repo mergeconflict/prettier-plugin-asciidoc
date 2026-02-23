@@ -1,7 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import { firstList } from "../helpers.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("unordered list parsing", () => {
   // The simplest case: a single `* item` line is a one-item list.
@@ -37,7 +37,7 @@ describe("unordered list parsing", () => {
     } = list;
     // Parent item has text + nested list
     const nestedList = parent.children.find((c) => c.type === "list");
-    if (nestedList?.type !== "list") unreachable("expected nested list");
+    narrow(nestedList, "list");
     expect(nestedList.variant).toBe("unordered");
     expect(nestedList.children).toHaveLength(1);
     expect(nestedList.children[0].depth).toBe(2);
@@ -53,12 +53,11 @@ describe("unordered list parsing", () => {
     expect(children).toHaveLength(1);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    // The text content should contain both lines
     const {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") unreachable("expected text node");
+    narrow(textNode, "text");
     expect(textNode.value).toContain("First line");
     expect(textNode.value).toContain("second line");
   });
@@ -87,11 +86,13 @@ describe("unordered list parsing", () => {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") unreachable("expected text node");
+    narrow(textNode, "text");
     expect(textNode.value).toBe("Hello world");
   });
 
-  // Deeper nesting: three levels.
+  // Three levels exercises the recursive nesting path: each
+  // deeper marker (`**`, `***`) must attach to the correct
+  // parent, proving the parser handles arbitrary depth.
   test("three levels of nesting", () => {
     const input = "* Level 1\n** Level 2\n*** Level 3\n";
     const { children } = parse(input);
@@ -101,18 +102,16 @@ describe("unordered list parsing", () => {
       children: [l1Item],
     } = list;
     const l2List = l1Item.children.find((c) => c.type === "list");
-    if (l2List?.type !== "list") {
-      throw new Error("Expected nested list at level 2");
-    }
+    narrow(l2List, "list");
     expect(l2List.children).toHaveLength(1);
     const {
       children: [l2Item],
     } = l2List;
     const l3List = l2Item.children.find((c) => c.type === "list");
-    if (l3List?.type !== "list") {
-      throw new Error("Expected nested list at level 3");
-    }
+    narrow(l3List, "list");
     expect(l3List.children).toHaveLength(1);
+    // Depth is derived from the marker length: `***` → length
+    // 3, so depth = marker.length (1-based).
     expect(l3List.children[0].depth).toBe(3);
   });
 
@@ -130,9 +129,7 @@ describe("unordered list parsing", () => {
         const nested = current.children[0].children.find(
           (c) => c.type === "list",
         );
-        if (nested?.type !== "list") {
-          throw new Error(`Expected nested list at level ${depth + 1}`);
-        }
+        narrow(nested, "list");
         current = nested;
       }
     }
@@ -147,9 +144,7 @@ describe("unordered list parsing", () => {
       children: [parentItem],
     } = list;
     const nestedList = parentItem.children.find((c) => c.type === "list");
-    if (nestedList?.type !== "list") {
-      throw new Error("Expected nested list");
-    }
+    narrow(nestedList, "list");
     expect(nestedList.children).toHaveLength(2);
   });
 
@@ -166,14 +161,10 @@ describe("unordered list parsing", () => {
     expect(list.children[1].depth).toBe(1);
     // Nested and Deep are inside First.
     const nested = list.children[0].children.find((c) => c.type === "list");
-    if (nested?.type !== "list") {
-      throw new Error("Expected nested list under First");
-    }
+    narrow(nested, "list");
     expect(nested.children).toHaveLength(1);
     const deep = nested.children[0].children.find((c) => c.type === "list");
-    if (deep?.type !== "list") {
-      throw new Error("Expected nested list under Nested");
-    }
+    narrow(deep, "list");
     expect(deep.children).toHaveLength(1);
     expect(deep.children[0].depth).toBe(3);
   });
@@ -188,9 +179,7 @@ describe("unordered list parsing", () => {
     expect(list.children).toHaveLength(1);
     expect(list.children[0].depth).toBe(1);
     const textNode = list.children[0].children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") {
-      throw new Error("Expected text node");
-    }
+    narrow(textNode, "text");
     expect(textNode.value).toBe("Item");
   });
 
@@ -208,7 +197,7 @@ describe("unordered list parsing", () => {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") unreachable("expected text node");
+    narrow(textNode, "text");
     expect(textNode.value).toBe(
       "First line\ncontinuation line\nanother continuation",
     );
@@ -229,7 +218,7 @@ describe("unordered list parsing", () => {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") unreachable("expected text node");
+    narrow(textNode, "text");
     expect(textNode.value).toBe(
       "First line\nindented continuation\nflush continuation",
     );
@@ -247,16 +236,12 @@ describe("unordered list parsing", () => {
       children: [parentItem],
     } = list;
     const nestedList = parentItem.children.find((c) => c.type === "list");
-    if (nestedList?.type !== "list") {
-      throw new Error("Expected nested list");
-    }
+    narrow(nestedList, "list");
     const {
       children: [childItem],
     } = nestedList;
     const textNode = childItem.children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") {
-      throw new Error("Expected text node");
-    }
+    narrow(textNode, "text");
     expect(textNode.value).toBe("Child first line\nchild continuation");
   });
 });

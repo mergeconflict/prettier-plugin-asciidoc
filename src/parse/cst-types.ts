@@ -20,6 +20,9 @@ export interface DocumentCstChildren {
   Newline?: IToken[];
 }
 
+// At most one field is populated per CstNode — the grammar's
+// OR rule ensures each block matches exactly one alternative.
+
 /** Children of the `block` rule (one block-level element). */
 export interface BlockCstChildren {
   /** Paragraph sub-rule (inline text content). */
@@ -140,7 +143,11 @@ export interface ListItemCstChildren {
   inlineLine?: CstNode[];
   /** Newlines between inline lines (pops inline mode). */
   InlineNewline?: IToken[];
-  /** Structural newlines between indented continuation lines. */
+  /**
+   * Structural newlines that delimit list-item boundaries
+   * (as opposed to InlineNewline tokens within the item's
+   * inline content).
+   */
   Newline?: IToken[];
   /** Continuation lines starting with whitespace. */
   IndentedLine?: IToken[];
@@ -160,7 +167,11 @@ export interface OrderedListItemCstChildren {
   inlineLine?: CstNode[];
   /** Newlines between inline lines (pops inline mode). */
   InlineNewline?: IToken[];
-  /** Structural newlines between indented continuation lines. */
+  /**
+   * Structural newlines that delimit list-item boundaries
+   * (as opposed to InlineNewline tokens within the item's
+   * inline content).
+   */
   Newline?: IToken[];
   /** Continuation lines starting with whitespace. */
   IndentedLine?: IToken[];
@@ -180,7 +191,11 @@ export interface CalloutListItemCstChildren {
   inlineLine?: CstNode[];
   /** Newlines between inline lines (pops inline mode). */
   InlineNewline?: IToken[];
-  /** Structural newlines between indented continuation lines. */
+  /**
+   * Structural newlines that delimit list-item boundaries
+   * (as opposed to InlineNewline tokens within the item's
+   * inline content).
+   */
   Newline?: IToken[];
   /** Continuation lines starting with whitespace. */
   IndentedLine?: IToken[];

@@ -65,6 +65,8 @@ export function tokenStartLocation(token: IToken): Location {
 export function tokenEndLocation(token: IToken): Location {
   return makeLocation(
     (token.endOffset ?? FIRST) + ONE_PAST_END,
+    // endLine needs no adjustment: the exclusive end is on
+    // the same line, one column past endColumn.
     token.endLine ?? FIRST_LINE,
     (token.endColumn ?? FIRST_COLUMN) + ONE_PAST_END,
   );
@@ -85,6 +87,6 @@ export function computeEnd(text: string): Location {
   return makeLocation(
     text.length,
     lines.length,
-    lastLine.length + FIRST_COLUMN,
+    lastLine.length + ONE_PAST_END,
   );
 }

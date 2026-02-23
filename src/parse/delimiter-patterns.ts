@@ -60,6 +60,9 @@ export function makeClosePattern(
       // Walk backwards through all previously lexed tokens
       // to find the most recent open delimiter for this block
       // type. The tokens array is shared across all modes.
+      // findLast suffices: non-nestable block delimiters
+      // can't appear inside themselves, so the last match
+      // is the close.
       const openToken = tokens.findLast(
         (token) => token.tokenType.name === openTokenName,
       );
@@ -113,7 +116,7 @@ export function makeParentClosePattern(
       _groups: Record<string, IToken[]>,
     ): CustomPatternMatcherReturn | null => {
       const match = regex.exec(text.slice(offset));
-      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
+      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null for no-match
       if (match?.index !== EMPTY) return null;
 
       // Walk backwards through all previously lexed tokens.
@@ -140,7 +143,7 @@ export function makeParentClosePattern(
       }
 
       const [matched] = match;
-      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
+      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null for no-match
       if (matched.length !== openLength) return null;
 
       const result: CustomPatternMatcherReturn = [matched];

@@ -56,4 +56,21 @@ describe("checklist formatting", () => {
     const input = ". [x] Not a checkbox\n";
     expect(await formatAdoc(input)).toBe(input);
   });
+
+  // Continuation lines of a checklist item should align under
+  // the text content, not under the checkbox bracket. The full
+  // prefix is "* [x] " = 6 characters, so continuations need
+  // a 6-space indent.
+  test("checklist continuation aligns under text, not checkbox", async () => {
+    const input =
+      "* [x] This is a very long checklist item that definitely needs to be reflowed to multiple lines for proper formatting\n";
+    const result = await formatAdoc(input, { printWidth: 40 });
+    const lines = result.trimEnd().split("\n");
+    // First line starts with "* [x] "
+    expect(lines[0]).toMatch(/^\* \[x\] /v);
+    // Continuation lines: 6-space indent ("* " + "[x] " = 6)
+    for (const continuation of lines.slice(1)) {
+      expect(continuation).toMatch(/^ {6}\S/v);
+    }
+  });
 });

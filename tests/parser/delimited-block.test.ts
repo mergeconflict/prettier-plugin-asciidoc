@@ -2,6 +2,9 @@ import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import { firstDelimitedBlock } from "../helpers.js";
 
+// Listing blocks use verbatim content (no inline parsing),
+// are closed by a same-length delimiter, and trigger a lexer
+// mode switch to capture raw text.
 describe("listing block parsing", () => {
   // The simplest listing block: `----` delimiters around content.
   test("basic listing block", () => {
@@ -9,6 +12,7 @@ describe("listing block parsing", () => {
     expect(children).toHaveLength(1);
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("listing");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("some code");
   });
 
@@ -17,6 +21,7 @@ describe("listing block parsing", () => {
     const { children } = parse("----\nline 1\nline 2\nline 3\n----\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("listing");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("line 1\nline 2\nline 3");
   });
 
@@ -25,6 +30,7 @@ describe("listing block parsing", () => {
     const { children } = parse("----\n----\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("listing");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("");
   });
 
@@ -33,6 +39,7 @@ describe("listing block parsing", () => {
     const { children } = parse("------\ncode\n------\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("listing");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("code");
   });
 
@@ -42,6 +49,7 @@ describe("listing block parsing", () => {
     const { children } = parse("------\n----\nstill inside\n------\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("listing");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("----\nstill inside");
   });
 
@@ -50,6 +58,7 @@ describe("listing block parsing", () => {
   test("formatting chars preserved verbatim", () => {
     const { children } = parse("----\n*bold* _italic_ `mono`\n----\n");
     const block = firstDelimitedBlock(children);
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("*bold* _italic_ `mono`");
   });
 
@@ -59,6 +68,7 @@ describe("listing block parsing", () => {
   test("other delimiters inside listing are content", () => {
     const { children } = parse("----\n....\ncontent\n++++\n----\n");
     const block = firstDelimitedBlock(children);
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("....\ncontent\n++++");
   });
 });
@@ -69,6 +79,7 @@ describe("literal block parsing", () => {
     const { children } = parse("....\nsome text\n....\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("literal");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("some text");
   });
 
@@ -77,6 +88,7 @@ describe("literal block parsing", () => {
     const { children } = parse("....\n....\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("literal");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("");
   });
 
@@ -84,6 +96,7 @@ describe("literal block parsing", () => {
   test("listing delimiters inside literal are content", () => {
     const { children } = parse("....\n----\nstuff\n----\n....\n");
     const block = firstDelimitedBlock(children);
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("----\nstuff\n----");
   });
 
@@ -93,6 +106,7 @@ describe("literal block parsing", () => {
     const { children } = parse("......\n....\nstill inside\n......\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("literal");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("....\nstill inside");
   });
 });
@@ -103,6 +117,7 @@ describe("passthrough block parsing", () => {
     const { children } = parse("++++\n<div>raw</div>\n++++\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("pass");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("<div>raw</div>");
   });
 
@@ -111,6 +126,7 @@ describe("passthrough block parsing", () => {
     const { children } = parse("++++\n++++\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("pass");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("");
   });
 
@@ -120,6 +136,7 @@ describe("passthrough block parsing", () => {
     const { children } = parse("++++++\n++++\nstill inside\n++++++\n");
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("pass");
+    expect(block.form).toBe("delimited");
     expect(block.content).toBe("++++\nstill inside");
   });
 });
@@ -148,5 +165,10 @@ describe("delimited block context", () => {
     expect(block.position.start.line).toBe(1);
     expect(block.position.start.column).toBe(1);
     expect(block.position.start.offset).toBe(0);
+    // "----\ncode\n----" = 14 chars; close delimiter ends at
+    // line 3, column 4; exclusive end is offset 14, column 5.
+    expect(block.position.end.line).toBe(3);
+    expect(block.position.end.column).toBe(5);
+    expect(block.position.end.offset).toBe(14);
   });
 });

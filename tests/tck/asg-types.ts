@@ -169,7 +169,7 @@ export interface AsgLeafBlock {
   /** Block form: "delimited", "indented", or "paragraph". */
   form: string;
   /** The delimiter string (e.g. "----", "...."). */
-  delimiter: string;
+  delimiter?: string;
   /** Inline content within the leaf block. */
   inlines: AsgInline[];
   /** Source location of the block. */
@@ -210,7 +210,10 @@ export interface AsgDiscreteHeading {
   type: "block";
   /** Inline content forming the heading title. */
   title: AsgInline[];
-  /** Heading level (0-5). */
+  /**
+   * Heading level (0-5). Level 0 is the document title;
+   * discrete headings in practice start at level 1.
+   */
   level: number;
   /** Source location of the heading. */
   location: AsgLocation;
@@ -228,7 +231,11 @@ export interface AsgBreak {
   location: AsgLocation;
 }
 
-/** The document header (title and metadata). */
+/**
+ * The document header (title and metadata). The official
+ * ASG schema also includes an `authors` field, but we omit
+ * it because our parser does not yet extract author lines.
+ */
 export interface AsgHeader {
   /** Inline content forming the document title. */
   title: AsgInline[];
@@ -264,7 +271,11 @@ export interface AsgDocument {
  */
 export type AsgInline = AsgInlineLiteral | AsgInlineSpan | AsgInlineReference;
 
-/** Union of all block ASG node types. */
+/**
+ * Union of all block ASG node types. The official schema
+ * also includes `dlist` (description list) and `blockMacro`
+ * types, which are not yet implemented in our parser.
+ */
 export type AsgBlock =
   | AsgParagraph
   | AsgSection

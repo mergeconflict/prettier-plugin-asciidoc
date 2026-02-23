@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import { firstList } from "../helpers.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("checklist parsing", () => {
   // `[x]` is the canonical checked marker.
@@ -9,7 +10,7 @@ describe("checklist parsing", () => {
     const list = firstList(children);
     expect(list.children[0].checkbox).toBe("checked");
     const textNode = list.children[0].children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") throw new Error("Expected text node");
+    narrow(textNode, "text");
     expect(textNode.value).toBe("Done");
   });
 
@@ -49,7 +50,7 @@ describe("checklist parsing", () => {
     const { children } = parse("* [x] Task text here\n");
     const list = firstList(children);
     const textNode = list.children[0].children.find((c) => c.type === "text");
-    if (textNode?.type !== "text") throw new Error("Expected text");
+    narrow(textNode, "text");
     expect(textNode.value).toBe("Task text here");
   });
 
@@ -59,9 +60,7 @@ describe("checklist parsing", () => {
     const list = firstList(children);
     expect(list.children[0].checkbox).toBe("checked");
     const nested = list.children[0].children.find((c) => c.type === "list");
-    if (nested?.type !== "list") {
-      throw new Error("Expected nested list");
-    }
+    narrow(nested, "list");
     expect(nested.children[0].checkbox).toBe("unchecked");
   });
 

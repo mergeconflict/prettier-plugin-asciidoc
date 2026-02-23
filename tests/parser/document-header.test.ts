@@ -8,7 +8,7 @@
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import { unreachable } from "../../src/unreachable.js";
+import { narrow } from "../../src/unreachable.js";
 
 describe("document title parsing", () => {
   // The document title is a level-0 heading using a single `=` marker.
@@ -19,7 +19,7 @@ describe("document title parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "documentTitle") unreachable("expected documentTitle");
+    narrow(child0, "documentTitle");
     expect(child0.title).toBe("My Document");
   });
 
@@ -31,7 +31,7 @@ describe("document title parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "documentTitle") unreachable("expected documentTitle");
+    narrow(child0, "documentTitle");
     expect(child0.title).toBe("Extra Spaces");
   });
 
@@ -49,7 +49,8 @@ describe("document title parsing", () => {
 
   // The document title followed by attribute entries (no blank line)
   // is the standard header pattern. Both should be parsed as separate
-  // block nodes — grouping is handled by the printer's join logic.
+  // block nodes — grouping is handled by the printer's
+  // `joinBlocks` function.
   test("document title followed by attribute entries", () => {
     const input = "= My Document\n:toc:\n:source-highlighter: rouge\n";
     const document = parse(input);
@@ -70,8 +71,10 @@ describe("document title parsing", () => {
   });
 
   // Document title with attribute entries, then a blank line, then body.
-  // The attribute entries belong to the header (contiguous with title),
-  // and the paragraph starts the body.
+  // The attribute entries are contiguous with the title (no blank
+  // line), so they are part of the header. In the AST they are flat
+  // siblings of the title, not grouped under a header node — the
+  // header is a semantic concept, not a structural container.
   test("full header with attributes then body", () => {
     const input = "= My Document\n:toc:\n\nBody text.\n";
     const document = parse(input);
@@ -83,6 +86,9 @@ describe("document title parsing", () => {
 
   // The document title must not be confused with section headings.
   // `== Title` is a section (level 1), not a document title.
+  // Disambiguation works because the DocumentTitle token (`= `)
+  // has higher priority than SectionMarker (`== `..`======`)
+  // in the Chevrotain lexer, so `= Title` always matches first.
   test("== is a section, not a document title", () => {
     const document = parse("== Section\n");
     expect(document.children).toHaveLength(1);
@@ -110,7 +116,7 @@ describe("document title parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "documentTitle") unreachable("expected documentTitle");
+    narrow(child0, "documentTitle");
     expect(child0.title).toBe("Title");
   });
 
@@ -124,7 +130,7 @@ describe("document title parsing", () => {
     const {
       children: [child0],
     } = document;
-    if (child0.type !== "documentTitle") unreachable("expected documentTitle");
+    narrow(child0, "documentTitle");
     expect(child0.title).toBe("");
   });
 });

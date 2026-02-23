@@ -524,8 +524,13 @@ export const InlineModeStart = createToken({
 });
 
 /**
- * Newline inside inline mode — pops back to default_mode so the
- * next line gets block-level token checks.
+ * Newline inside inline mode — pops back to default_mode
+ * so the next line gets block-level token checks.
+ *
+ * Not to be confused with `Newline`, which fires in
+ * default mode (between block elements) and stays in
+ * default mode. Both match `\n` but serve different
+ * lexer-mode transitions.
  */
 export const InlineNewline = createToken({
   name: "InlineNewline",

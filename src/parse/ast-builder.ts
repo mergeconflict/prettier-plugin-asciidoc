@@ -56,6 +56,7 @@ import {
   unwrapInlineLines,
 } from "./inline-tokens.js";
 import {
+  AUTO_CALLOUT_NUMBER,
   EMPTY,
   FIRST,
   FIRST_COLUMN,
@@ -212,8 +213,9 @@ export class AstBuilder extends BaseCstVisitor {
    * @param sourceText - Full source, passed through to
    *   subrule visitors and used for recovery fallback
    *   position.
-   * @returns The appropriate AST block node, or a zero-width
-   *   paragraph if recovery produced an empty CST node.
+   * @returns The appropriate AST block node, or a placeholder
+   *   paragraph spanning the full document if recovery
+   *   produced an empty CST node.
    */
   block(context: BlockCstChildren, sourceText: string): BlockNode {
     // Try single-token block types first.
@@ -227,8 +229,9 @@ export class AstBuilder extends BaseCstVisitor {
     const subrule = findSubrule(context);
     if (subrule === undefined) {
       // Recovery produced an empty block CST node. Return
-      // a zero-width paragraph so the document structure is
-      // preserved without crashing.
+      // a placeholder paragraph spanning the full document
+      // so the document structure is preserved without
+      // crashing.
       return {
         type: "paragraph",
         children: [],
@@ -455,7 +458,8 @@ export class AstBuilder extends BaseCstVisitor {
     // Extract callout number: "<1> " → 1, "<.> " → 0 (auto).
     const innerMatch = CALLOUT_NUMBER_RE.exec(markerToken.image);
     const inner = innerMatch?.groups?.inner ?? ".";
-    const calloutNumber = inner === "." ? EMPTY : Number.parseInt(inner, 10);
+    const calloutNumber =
+      inner === "." ? AUTO_CALLOUT_NUMBER : Number.parseInt(inner, 10);
 
     const { inlineChildren, lastToken } = buildListItemInlineChildren(
       context,

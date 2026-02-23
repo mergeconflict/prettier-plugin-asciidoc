@@ -38,7 +38,7 @@ import {
 // inner character so we can distinguish checked from unchecked.
 const CHECKBOX_RE = /^\[(?<mark>[x* ])\] /v;
 // Length of the checkbox prefix: `[x] ` = 4 characters.
-const CHECKBOX_PREFIX_LEN = 4;
+export const CHECKBOX_PREFIX_LEN = 4;
 
 /**
  * Detects a checklist prefix (`[x] `, `[*] `, `[ ] `) at the
@@ -78,8 +78,7 @@ export function parseCheckbox(rawValue: string): {
  * reconstruction would lose blank lines because the CST
  * groups tokens by type, not position.
  * @param openTokens - The opening delimiter tokens from the
- *   CST. The first element is always present since the grammar
- *   requires it to enter the rule.
+ *   CST.
  * @param closeTokens - The closing delimiter tokens, or
  *   undefined when the block is unclosed (EOF before match).
  * @param variant - The block variant (listing, literal, pass,
@@ -95,8 +94,8 @@ export function buildDelimitedBlock(
   variant: DelimitedBlockNode["variant"],
   sourceText: string,
 ): DelimitedBlockNode {
-  // The open token is always present — the grammar can't enter
-  // a leaf block rule without first matching the open delimiter.
+  // Always present: the grammar can't enter a leaf block rule
+  // without first matching the open delimiter.
   const openToken =
     openTokens?.[FIRST] ??
     unreachable("Delimited block must have an opening delimiter");
@@ -152,7 +151,7 @@ export function buildDelimitedBlock(
  * Builds a ParentBlockNode from open/close delimiter tokens
  * and recursively visited child block nodes.
  * @param openTokens - The opening delimiter tokens from the
- *   CST. Always present since the grammar requires it.
+ *   CST.
  * @param closeTokens - The closing delimiter tokens, or
  *   undefined when the block is unclosed (EOF before match).
  * @param variant - The parent block variant (example,
@@ -169,8 +168,8 @@ export function buildParentBlock(
   variant: ParentBlockNode["variant"],
   children: BlockNode[],
 ): ParentBlockNode {
-  // The open delimiter is always present — the grammar can't
-  // enter a parent block rule without first matching it.
+  // Always present: the grammar can't enter a parent block
+  // rule without first matching the open delimiter.
   const openToken =
     openTokens?.[FIRST] ??
     unreachable("Parent block must have an opening delimiter");
@@ -338,9 +337,13 @@ function findParagraphSubrule(context: BlockCstChildren): CstNode | undefined {
  *   property corresponds to an alternative in the block
  *   grammar rule.
  * @returns The first matched subrule node, checked in
- *   priority order: comments, attribute entries, lists,
- *   delimited blocks, then paragraphs. Returns undefined
- *   when error recovery produced an empty block.
+ *   priority order: comments and attribute entries first
+ *   (syntactically unambiguous), then lists and delimited
+ *   blocks, then paragraphs last (paragraphs would shadow
+ *   other constructs). Within paragraphs, literal and
+ *   admonition forms take priority over plain paragraphs.
+ *   Returns undefined when error recovery produced an
+ *   empty block.
  */
 export function findSubrule(context: BlockCstChildren): CstNode | undefined {
   return (

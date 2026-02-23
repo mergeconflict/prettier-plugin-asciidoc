@@ -17,7 +17,7 @@ import type {
   AttributeReferenceNode,
 } from "../ast.js";
 import { tokenStartLocation, tokenEndLocation } from "./positions.js";
-import { DELIM_WIDTH, EMPTY, NEXT } from "../constants.js";
+import { DELIM_WIDTH, EMPTY, FIRST, NEXT, NOT_FOUND } from "../constants.js";
 import { unreachable } from "../unreachable.js";
 import {
   AttributeReference,
@@ -75,25 +75,6 @@ const MARK_TO_TYPE = new Map<
 
 // Set of mark token types for fast membership testing.
 const MARK_TOKEN_TYPES = new Set(MARK_TO_TYPE.keys());
-
-// Sentinel returned by findCloseMark when no match is found.
-const NOT_FOUND = -1;
-
-/**
- * Look up the AST node type name for a mark token type.
- *
- * The MARK_TO_TYPE map uses token type identity (not string
- * names) for type-safe dispatch. This wrapper exists so
- * callers don't interact with the map directly.
- * @param markTokenType - Chevrotain token type to look up.
- * @returns The AST type string, or undefined if the token
- *   is not a formatting mark.
- */
-function lookupMarkType(
-  markTokenType: TokenType,
-): "bold" | "italic" | "monospace" | "highlight" | undefined {
-  return MARK_TO_TYPE.get(markTokenType);
-}
 
 /**
  * Scan forward for a matching close mark of the same token
@@ -184,7 +165,7 @@ function makeFormattingNode(
   options: FormattingNodeOptions,
 ): BoldNode | ItalicNode | MonospaceNode | HighlightNode {
   const { markTokenType, constrained, children, openMark, closeMark } = options;
-  const type = lookupMarkType(markTokenType);
+  const type = MARK_TO_TYPE.get(markTokenType);
   const position = {
     start: tokenStartLocation(openMark),
     end: tokenEndLocation(closeMark),
@@ -231,16 +212,25 @@ function makeAttributeReference(token: IToken): AttributeReferenceNode {
   };
 }
 
-// Shared parameter bag for handleRoleAttribute. Bundles the
-// token stream, current position, and the text/node
-// accumulation callbacks so the handler can scan ahead for
-// a highlight mark pair and emit the appropriate inline node.
+/**
+ * State passed to {@link handleRoleAttribute} so it can
+ * scan ahead for a highlight mark pair and emit the
+ * appropriate inline node. Groups the token stream,
+ * current position, and the text/node accumulation
+ * callbacks that the main loop owns.
+ */
 interface RoleAttributeContext {
+  /** The full flat token stream being processed. */
   tokens: IToken[];
+  /** Current position in the token stream. */
   index: number;
+  /** The RoleAttribute token at the current position. */
   token: IToken;
+  /** Flush any accumulated plain text as a TextNode. */
   flushText: () => void;
+  /** Append text to the pending plain-text accumulator. */
   accumulate: (token: IToken, text: string) => void;
+  /** Output list of inline nodes built so far. */
   nodes: InlineNode[];
 }
 
@@ -458,7 +448,7 @@ export function buildFromTokens(allTokens: IToken[]): InlineNode[] {
   while (end > EMPTY && allTokens[end - NEXT].tokenType === InlineNewline) {
     end -= NEXT;
   }
-  const tokens = end < tokenCount ? allTokens.slice(EMPTY, end) : allTokens;
+  const tokens = end < tokenCount ? allTokens.slice(FIRST, end) : allTokens;
 
   const nodes: InlineNode[] = [];
   let pendingText = "";
@@ -559,16 +549,16 @@ export function buildFromTokens(allTokens: IToken[]): InlineNode[] {
  * to the core builder.
  * @param inlineTokenNodes - CST nodes from the parser's
  *   `inlineToken` rule, each wrapping one or more tokens.
- * @param inlineNewlineTokens - InlineNewline tokens
+ * @param inlineModeNewlineTokens - InlineNewline tokens
  *   captured separately by the parser, merged in to
  *   preserve line break positions.
  * @returns The built array of InlineNode AST nodes.
  */
 export function buildInlineNodes(
   inlineTokenNodes: CstNode[],
-  inlineNewlineTokens: IToken[],
+  inlineModeNewlineTokens: IToken[],
 ): InlineNode[] {
-  const tokens = flattenInlineTokens(inlineTokenNodes, inlineNewlineTokens);
+  const tokens = flattenInlineTokens(inlineTokenNodes, inlineModeNewlineTokens);
   return buildFromTokens(tokens);
 }
 
@@ -582,17 +572,17 @@ export function buildInlineNodes(
  * where the parser groups inline content per source line.
  * @param inlineLineNodes - CST nodes from the parser's
  *   `inlineLine` subrule, one per source line.
- * @param inlineNewlineTokens - InlineNewline tokens
+ * @param inlineModeNewlineTokens - InlineNewline tokens
  *   captured separately, merged in to preserve line
  *   break positions.
  * @returns The built array of InlineNode AST nodes.
  */
 export function buildInlineNodesFromLines(
   inlineLineNodes: CstNode[],
-  inlineNewlineTokens: IToken[],
+  inlineModeNewlineTokens: IToken[],
 ): InlineNode[] {
   return buildInlineNodes(
     unwrapInlineLines(inlineLineNodes),
-    inlineNewlineTokens,
+    inlineModeNewlineTokens,
   );
 }

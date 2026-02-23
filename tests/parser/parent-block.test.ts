@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { ParentBlockNode } from "../../src/ast.js";
+import { narrow } from "../../src/unreachable.js";
 
 /**
  * Extracts the first child as a ParentBlockNode. Throws
@@ -13,9 +14,7 @@ function firstParentBlock(
   children: ReturnType<typeof parse>["children"],
 ): ParentBlockNode {
   const [block] = children;
-  if (block.type !== "parentBlock") {
-    throw new Error(`Expected parentBlock, got ${block.type}`);
-  }
+  narrow(block, "parentBlock");
   return block;
 }
 
@@ -58,6 +57,7 @@ describe("example block parsing", () => {
     const block = firstParentBlock(children);
     expect(block.variant).toBe("example");
     expect(block.children).toHaveLength(1);
+    expect(block.children[0].type).toBe("paragraph");
   });
 });
 
@@ -208,6 +208,9 @@ describe("delimiter length matching", () => {
     expect(block.children[1].type).toBe("parentBlock");
   });
 
+  // Open with 5 `*`, attempt close with 4 `*` — the 4-char
+  // line opens a nested sidebar. The second `****` closes
+  // that nested block (empty), leaving the outer unclosed.
   test("sidebar block close must match open length", () => {
     const { children } = parse("*****\nContent.\n****\n****\n");
     expect(children).toHaveLength(1);
@@ -219,6 +222,9 @@ describe("delimiter length matching", () => {
     expect(block.children[1].type).toBe("parentBlock");
   });
 
+  // Open with 5 `_`, attempt close with 4 `_` — the 4-char
+  // line opens a nested quote. The second `____` closes
+  // that nested block (empty), leaving the outer unclosed.
   test("quote block close must match open length", () => {
     const { children } = parse("_____\nContent.\n____\n____\n");
     expect(children).toHaveLength(1);
@@ -246,6 +252,7 @@ describe("delimiter length matching", () => {
     const block = firstParentBlock(children);
     expect(block.variant).toBe("sidebar");
     expect(block.children).toHaveLength(1);
+    expect(block.children[0].type).toBe("paragraph");
   });
 
   test("matching 5-char quote delimiters", () => {
@@ -254,6 +261,7 @@ describe("delimiter length matching", () => {
     const block = firstParentBlock(children);
     expect(block.variant).toBe("quote");
     expect(block.children).toHaveLength(1);
+    expect(block.children[0].type).toBe("paragraph");
   });
 
   // Nested same-type blocks with different delimiter lengths.
@@ -280,5 +288,6 @@ describe("delimiter length matching", () => {
     const block = firstParentBlock(children);
     expect(block.variant).toBe("open");
     expect(block.children).toHaveLength(1);
+    expect(block.children[0].type).toBe("paragraph");
   });
 });

@@ -60,7 +60,8 @@ interface NestingLevel {
  * The returned node has no nested children yet — those are
  * attached later by {@link attachNestedList} once the
  * nesting stack is unwound.
- * @param item - Flat list item produced by the CST visitor.
+ * @param item - Flat list item produced by the CST visitor
+ *   (only called from `nestListItems`).
  * @returns A fresh ListItemNode with spread-copied inline
  *   children (safe for later mutation).
  */
@@ -182,6 +183,9 @@ export function nestListItems(
   flatItems: FlatListItem[],
   variant: ListNode["variant"] = "unordered",
 ): ListNode {
+  // Items starting at depth > 1 without a parent at depth 1
+  // are valid AsciiDoc — the nesting logic treats the first
+  // item's depth as the effective root level.
   // FIRST doubles as the root depth (0) when there are
   // no items — depth 0 is the natural root for any list.
   const firstDepth = flatItems.length > EMPTY ? flatItems[FIRST].depth : FIRST;

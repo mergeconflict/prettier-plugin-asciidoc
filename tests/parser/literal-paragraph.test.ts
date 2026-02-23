@@ -6,7 +6,7 @@ import { firstDelimitedBlock } from "../helpers.js";
 // beginning with a space) and — as a contrast case — the delimited
 // `....` form. The paragraph form (`[literal]` + plain paragraph) is
 // covered in tests/parser/paragraph-form-blocks.test.ts.
-describe("literal paragraph parsing", () => {
+describe("literal paragraph and delimited literal block parsing", () => {
   // A single line beginning with a space is recognised as a literal
   // paragraph (form: "indented"). The leading space is part of the
   // content — indentation is semantically significant in literal
@@ -80,6 +80,10 @@ describe("literal paragraph parsing", () => {
     expect(block.position.start.line).toBe(1);
     expect(block.position.start.column).toBe(1);
     expect(block.position.start.offset).toBe(0);
+    // " indented text" is 14 chars; end offset is exclusive
+    expect(block.position.end.line).toBe(1);
+    expect(block.position.end.column).toBe(15);
+    expect(block.position.end.offset).toBe(14);
   });
 
   // A `....` delimited block produces variant "literal" with
@@ -93,5 +97,6 @@ describe("literal paragraph parsing", () => {
     const block = firstDelimitedBlock(children);
     expect(block.variant).toBe("literal");
     expect(block.form).toBe("delimited");
+    expect(block.content).toBe("some text");
   });
 });

@@ -56,3 +56,51 @@ test("formats simple paragraph", async () => {
   const result = await formatAdoc(input);
   expect(result).toBe(input);
 });
+
+// Sections with a document title, a level-1 heading, and body
+// text. Verifies blank-line separators between sections survive
+// round-tripping and no spurious whitespace is injected.
+test("formats sections", async () => {
+  const input = await readFile(
+    path.join(directory, "fixtures/identity/sections.adoc"),
+    "utf8",
+  );
+  const result = await formatAdoc(input);
+  expect(result).toBe(input);
+});
+
+// Unordered list with nested item. Verifies marker characters
+// and nesting depth are preserved without adding or removing
+// blank lines between items.
+test("formats lists", async () => {
+  const input = await readFile(
+    path.join(directory, "fixtures/identity/lists.adoc"),
+    "utf8",
+  );
+  const result = await formatAdoc(input);
+  expect(result).toBe(input);
+});
+
+// A four-dash delimited listing block. Verifies that delimiter
+// length is preserved at the canonical minimum (4 chars) and
+// verbatim content passes through unchanged.
+test("formats delimited blocks", async () => {
+  const input = await readFile(
+    path.join(directory, "fixtures/identity/delimited-blocks.adoc"),
+    "utf8",
+  );
+  const result = await formatAdoc(input);
+  expect(result).toBe(input);
+});
+
+// Inline formatting marks (*bold*, _italic_, `monospace`) inside
+// a paragraph. Verifies that inline markup passes through the
+// formatter without being altered or escaped.
+test("formats inline formatting", async () => {
+  const input = await readFile(
+    path.join(directory, "fixtures/identity/inline-formatting.adoc"),
+    "utf8",
+  );
+  const result = await formatAdoc(input);
+  expect(result).toBe(input);
+});
