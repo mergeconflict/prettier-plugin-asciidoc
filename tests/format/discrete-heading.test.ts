@@ -53,8 +53,12 @@ describe("discrete heading formatting", () => {
     expect(await formatAdoc(input)).toBe(input);
   });
 
-  // Discrete heading with other block metadata stacking.
-  test("anchor + discrete + heading stacks", async () => {
+  // Anchor paragraph is blank-line separated from the
+  // [discrete] attribute list, which itself stacks with
+  // the heading.
+  // Anchor paragraph stacks with following metadata ([discrete]
+  // attribute list), which itself stacks with the heading.
+  test("anchor + discrete + heading", async () => {
     const input = "[[my-id]]\n[discrete]\n== Heading\n";
     expect(await formatAdoc(input)).toBe(input);
   });

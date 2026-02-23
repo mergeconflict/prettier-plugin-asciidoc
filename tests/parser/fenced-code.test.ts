@@ -1,17 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import type { DelimitedBlockNode } from "../../src/ast.js";
-
-// Helper to extract the first delimited block from parsed children.
-function firstDelimitedBlock(
-  children: ReturnType<typeof parse>["children"],
-): DelimitedBlockNode {
-  const [block] = children;
-  if (block.type !== "delimitedBlock") {
-    throw new Error(`Expected delimitedBlock, got ${block.type}`);
-  }
-  return block;
-}
+import { firstDelimitedBlock } from "../helpers.js";
 
 describe("fenced code block parsing", () => {
   // Backtick-fenced code block with language hint produces a
@@ -25,7 +14,9 @@ describe("fenced code block parsing", () => {
     expect(block.content).toBe("fn main() {}");
   });
 
-  // Backtick-fenced code block without a language hint.
+  // Backtick-fenced code block without a language hint produces
+  // `language: undefined`, not an empty string. This distinguishes
+  // "no hint given" from "hint given but empty".
   test("fenced block without language", () => {
     const { children } = parse("```\nhello world\n```\n");
     expect(children).toHaveLength(1);
@@ -35,7 +26,8 @@ describe("fenced code block parsing", () => {
     expect(block.content).toBe("hello world");
   });
 
-  // Multi-line content is preserved verbatim.
+  // Multi-line content is preserved verbatim, including internal
+  // indentation — no whitespace stripping is applied to body lines.
   test("multi-line content preserved", () => {
     const input = '```rust\nfn main() {\n    println!("Hello");\n}\n```\n';
     const { children } = parse(input);
@@ -45,7 +37,9 @@ describe("fenced code block parsing", () => {
     expect(block.content).toBe('fn main() {\n    println!("Hello");\n}');
   });
 
-  // Empty fenced code block.
+  // A fenced block with no body lines (open fence immediately
+  // followed by close fence) produces content `""`, not
+  // `undefined`. Empty is a valid, distinct state.
   test("empty fenced code block", () => {
     const { children } = parse("```\n```\n");
     const block = firstDelimitedBlock(children);
@@ -53,7 +47,10 @@ describe("fenced code block parsing", () => {
     expect(block.content).toBe("");
   });
 
-  // Fenced code block between paragraphs.
+  // A fenced block surrounded by blank-line-separated paragraphs
+  // produces exactly three top-level children. Verifies that blank
+  // lines correctly terminate the preceding paragraph and that the
+  // block is not merged into either neighbour.
   test("between paragraphs", () => {
     const { children } = parse(
       "Before.\n\n```js\nconst x = 1;\n```\n\nAfter.\n",
@@ -62,25 +59,39 @@ describe("fenced code block parsing", () => {
     expect(children[0].type).toBe("paragraph");
     expect(children[1].type).toBe("delimitedBlock");
     expect(children[2].type).toBe("paragraph");
+    // slice(1) drops the leading paragraph so firstDelimitedBlock
+    // receives the block as its first element.
     const block = firstDelimitedBlock(children.slice(1));
     expect(block.language).toBe("js");
   });
 
   // Content with backticks (fewer than 3) inside is preserved.
+  // Single backticks cannot match the close-fence token pattern
+  // (` /```(?![^\n])/ `), so they are consumed as VerbatimContent.
+  // This validates token-priority isolation inside verbatim mode.
   test("backticks inside content are preserved", () => {
     const { children } = parse("```\nuse `backtick` here\n```\n");
     const block = firstDelimitedBlock(children);
     expect(block.content).toBe("use `backtick` here");
   });
 
-  // AsciiDoc-style delimiters inside fenced block are content.
+  // AsciiDoc-style delimiters (e.g. `----`) inside a fenced block
+  // are treated as plain content, not block openers. The lexer
+  // switches to `fenced_code_verbatim` mode on the open fence,
+  // which suppresses all normal block-delimiter tokens until the
+  // close fence is matched. This validates lexer mode isolation.
   test("asciidoc delimiters inside fenced block are content", () => {
     const { children } = parse("```\n----\ncode\n----\n```\n");
     const block = firstDelimitedBlock(children);
     expect(block.content).toBe("----\ncode\n----");
   });
 
-  // Trailing whitespace after the language hint is trimmed.
+  // Trailing whitespace after the language hint is trimmed via
+  // `.trim()` in the AST builder (applied to the slice of the open
+  // token image after the three backticks). Leading whitespace in
+  // a hint (e.g. "``` rust") is not currently tested; the token
+  // pattern /```[^\n]*/ would capture it, and `.trim()` would
+  // handle it, but that case is left implicit.
   test("trailing whitespace on language hint is trimmed", () => {
     const { children } = parse("```rust  \nfn main() {}\n```\n");
     const block = firstDelimitedBlock(children);

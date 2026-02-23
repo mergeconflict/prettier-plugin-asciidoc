@@ -14,13 +14,23 @@
  * from the grammar. Block-form admonitions are recognized by
  * the post-parse `convertParagraphFormBlocks` transform, which
  * converts `BlockAttributeList + ParentBlock` pairs to
- * `AdmonitionNode` with `form: "delimited"`.
+ * `AdmonitionNode` with `form: "delimited"`. The original
+ * `blockAttributeList` node is retained as a preceding
+ * sibling so attribute metadata is not lost.
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { AdmonitionNode } from "../../src/ast.js";
+import { unreachable } from "../../src/unreachable.js";
 
-// Helper to extract the admonition node at a given index.
+/**
+ * Extracts the child at the given index as an
+ * AdmonitionNode. Throws if the node at that position is
+ * not an admonition, surfacing test setup errors early.
+ * @param children - parsed document children array
+ * @param index - position of the expected admonition
+ * @returns the child narrowed to AdmonitionNode
+ */
 function admonitionAt(
   children: ReturnType<typeof parse>["children"],
   index: number,
@@ -188,8 +198,9 @@ describe("admonition edge cases", () => {
   });
 
   // Lowercase admonition types in attribute lists should also
-  // be recognized (AsciiDoc typically uses uppercase, but the
-  // extractStyle function normalizes to uppercase).
+  // be recognized (AsciiDoc typically uses uppercase, but
+  // getAdmonitionVariant normalizes the style to uppercase
+  // before matching, so [note] and [NOTE] are equivalent).
   test("[note] lowercase in attribute list is recognized", () => {
     const { children } = parse("[note]\n====\nContent.\n====\n");
     expect(children).toHaveLength(2);
@@ -197,19 +208,18 @@ describe("admonition edge cases", () => {
     expect(node.variant).toBe("note");
   });
 
-  // Custom/non-standard uppercase attribute list + parent block
-  // becomes an admonition with the custom variant. Asciidoctor
-  // treats any uppercase name as a custom admonition style.
+  // Any single uppercase alphabetic word in an attribute list
+  // becomes a custom admonition variant. The regex used by
+  // getAdmonitionVariant is /^[A-Z]+$/, so hyphenated names
+  // (e.g. MY-TYPE) do not match. This mirrors AsciiDoc's
+  // convention for custom admonition types.
   test("[EXERCISE] + example block is a custom admonition", () => {
     const { children } = parse("[EXERCISE]\n====\nContent.\n====\n");
-    // The [EXERCISE] attribute list is kept as metadata,
-    // followed by the admonition node.
     expect(children).toHaveLength(2);
     expect(children[0].type).toBe("blockAttributeList");
-    expect(children[1].type).toBe("admonition");
-    if (children[1].type === "admonition") {
-      expect(children[1].variant).toBe("exercise");
-      expect(children[1].form).toBe("delimited");
-    }
+    const [, child1] = children;
+    if (child1.type !== "admonition") unreachable("expected admonition");
+    expect(child1.variant).toBe("exercise");
+    expect(child1.form).toBe("delimited");
   });
 });

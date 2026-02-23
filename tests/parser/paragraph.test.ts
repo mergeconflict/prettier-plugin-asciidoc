@@ -1,16 +1,15 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import type { BlockNode, ParagraphNode } from "../../src/ast.js";
+import type { ParagraphNode } from "../../src/ast.js";
+import { asParagraph } from "../helpers.js";
 
-/** Narrow a block to a paragraph, throwing if the type doesn't match. */
-function asParagraph(node: BlockNode): ParagraphNode {
-  if (node.type !== "paragraph") {
-    throw new Error(`Expected paragraph, got ${node.type}`);
-  }
-  return node;
-}
-
-/** Get the text value of a paragraph's first text node. */
+/**
+ * Extracts the raw text value from a paragraph's first
+ * (and only) text child. Throws if the child is not a
+ * text node, surfacing unexpected inline structures.
+ * @param node - paragraph node with a single text child
+ * @returns the text value string
+ */
 function paragraphText(node: ParagraphNode): string {
   const {
     children: [child],
@@ -29,8 +28,8 @@ describe("paragraph parsing", () => {
     expect(document.children[0].type).toBe("paragraph");
   });
 
-  // Blank lines are the primary paragraph separator in AsciiDoc.
-  // The BlankLine token (\n followed by \n+) splits the input into two blocks.
+  // Blank lines are the primary paragraph separator in AsciiDoc. The
+  // BlankLine token (/\n(?:[ \t]*\n)+/) splits the input into two blocks.
   test("two paragraphs separated by blank line", () => {
     const document = parse("First paragraph.\n\nSecond paragraph.\n");
     expect(document.children).toHaveLength(2);
@@ -46,8 +45,10 @@ describe("paragraph parsing", () => {
     expect(document.children).toHaveLength(2);
   });
 
-  // Verify the text content survives the tokenization round-trip:
-  // InlineModeStart tokens are split per-line, then rejoined in the AST builder.
+  // Verify the text content survives the tokenization round-trip.
+  // Each line gets its own inlineLine CST node (InlineModeStart pushes the
+  // lexer into inline mode; InlineNewline pops it back). The AST builder
+  // unwraps those CST nodes and joins the lines with "\\n" in the text value.
   test("paragraph text content is correct", () => {
     const document = parse("First para.\n\nSecond para.\n");
     expect(paragraphText(asParagraph(document.children[0]))).toBe(
@@ -59,8 +60,10 @@ describe("paragraph parsing", () => {
   });
 
   // Consecutive non-blank lines form a single paragraph. The grammar's
-  // paragraph rule matches InlineModeStart (Newline InlineModeStart)*, grouping
-  // lines together. Lines are joined with \n in the text node value
+  // paragraph rule matches one inlineLine then loops over
+  // (InlineNewline inlineLine?)*. Each InlineNewline pops the lexer back
+  // to default_mode; InlineModeStart then pushes it into inline mode
+  // for the next line. Lines are joined with "\\n" in the text node value
   // to preserve the original line structure for the printer.
   test("multi-line paragraph has lines joined by newline", () => {
     const document = parse("Line one.\nLine two.\nLine three.\n");
@@ -96,8 +99,9 @@ describe("paragraph parsing", () => {
   });
 
   // End offset is exclusive (one past the last character of text content).
-  // The trailing Newline is NOT included — it belongs to the line separator,
-  // not the paragraph content. This matters for Prettier's locEnd().
+  // The trailing InlineNewline token is NOT included — it belongs to the
+  // line separator, not the paragraph content. This matters for Prettier's
+  // locEnd().
   test("paragraph end offset is end of last text content", () => {
     const document = parse("Hello.\n");
     const {
@@ -136,7 +140,8 @@ describe("paragraph parsing", () => {
   });
 
   // Real-world files may lack a final newline. The paragraph grammar's
-  // trailing Newline is optional (OPTION), so the parser must not choke.
+  // trailing InlineNewline is consumed by an OPTION, so the parser must
+  // not choke when it's absent.
   test("text without trailing newline still parses", () => {
     const document = parse("No trailing newline");
     expect(document.children).toHaveLength(1);

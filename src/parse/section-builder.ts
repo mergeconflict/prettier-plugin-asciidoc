@@ -10,10 +10,22 @@
 import type { BlockNode, SectionNode } from "../ast.js";
 import { EMPTY, LAST_ELEMENT } from "../constants.js";
 
-// Pops the top section from the stack and places it either as a
-// child of the new stack top (if one exists) or into the document's
-// top-level children. Extracted to avoid duplicating the pop-and-place
-// logic in the loop body and the drain phase of nestSections.
+/**
+ * Close the innermost open section and attach it to its
+ * parent. If a section is still on the stack the finished
+ * section becomes that parent's child; otherwise it falls
+ * through to the document root. Factored out so that the
+ * main loop body and the end-of-input drain phase share
+ * identical placement logic — duplicating it would risk
+ * the two diverging silently.
+ * @param stack - The open-section stack being maintained
+ *   by nestSections. Each entry is a section whose
+ *   children are still being accumulated. Mutated in
+ *   place: the top entry is removed.
+ * @param children - Top-level block accumulator for the
+ *   document. Finished sections land here when the stack
+ *   is empty (i.e. they have no enclosing section).
+ */
 function popSection(stack: SectionNode[], children: BlockNode[]): void {
   const finished = stack.pop();
   if (finished === undefined) {
@@ -26,20 +38,32 @@ function popSection(stack: SectionNode[], children: BlockNode[]): void {
   }
 }
 
-// Stack-based hierarchical nesting: sections at deeper levels become
-// children of the preceding shallower section. For example, `== A`
-// then `=== B` produces section A containing section B. The stack
-// tracks open sections from shallowest (bottom) to deepest (top).
-// When a new section arrives, we pop all sections at same level or
-// deeper — they're complete — then push the new section. Non-section
-// blocks go into the deepest open section (or document root).
+/**
+ * Convert a flat block array into a nested section tree.
+ * Sections at deeper levels become children of the
+ * preceding shallower section (e.g. `== A` then `=== B`
+ * produces A containing B). Non-section blocks attach to
+ * the deepest open section or the document root.
+ * @param flatBlocks - The unstructured block sequence
+ *   produced by the CST visitor. The grammar emits all
+ *   section headings at the same depth regardless of
+ *   their `=` count, so nesting must be reconstructed
+ *   here from the level numbers alone.
+ * @returns A block array where every section's children
+ *   list contains exactly the blocks and sub-sections
+ *   that appeared between its heading and the next
+ *   heading of equal or lesser level (or end of input).
+ */
 export function nestSections(flatBlocks: BlockNode[]): BlockNode[] {
   const children: BlockNode[] = [];
   const stack: SectionNode[] = [];
 
   for (const block of flatBlocks) {
     if (block.type === "section") {
-      // Pop sections at same level or deeper — they're finished.
+      // Pop sections at the same level or deeper. A heading at
+      // level N closes any open section also at level N because
+      // two sections at the same level are siblings, not nested.
+      // Deeper sections (level > N) are obviously closed too.
       while (
         stack.length > EMPTY &&
         stack[stack.length + LAST_ELEMENT].level >= block.level

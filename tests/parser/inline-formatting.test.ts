@@ -1,16 +1,16 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import type { BlockNode, InlineNode, ParagraphNode } from "../../src/ast.js";
+import type { InlineNode } from "../../src/ast.js";
+import { asParagraph } from "../helpers.js";
+import { unreachable } from "../../src/unreachable.js";
 
-/** Narrow a block to a paragraph, throwing if the type doesn't match. */
-function asParagraph(node: BlockNode): ParagraphNode {
-  if (node.type !== "paragraph") {
-    throw new Error(`Expected paragraph, got ${node.type}`);
-  }
-  return node;
-}
-
-/** Get the inline children of the first paragraph. */
+/**
+ * Parses AsciiDoc input and returns the inline nodes of
+ * its first paragraph. Shorthand for the common test
+ * pattern of inspecting inline formatting results.
+ * @param input - AsciiDoc source containing one paragraph
+ * @returns the inline children of the first paragraph
+ */
 function inlineNodes(input: string): InlineNode[] {
   const document = parse(input);
   return asParagraph(document.children[0]).children;
@@ -20,34 +20,31 @@ describe("inline formatting — bold", () => {
   test("*bold* → bold node containing text", () => {
     const nodes = inlineNodes("*bold*\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("bold");
-    if (nodes[0].type === "bold") {
-      expect(nodes[0].children).toHaveLength(1);
-      expect(nodes[0].children[0].type).toBe("text");
-      if (nodes[0].children[0].type === "text") {
-        expect(nodes[0].children[0].value).toBe("bold");
-      }
-    }
+    const [node0] = nodes;
+    if (node0.type !== "bold") unreachable("expected bold");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [inner0],
+    } = node0;
+    if (inner0.type !== "text") unreachable("expected text");
+    expect(inner0.value).toBe("bold");
   });
 
   test("**unconstrained bold** mid-word", () => {
     const nodes = inlineNodes("un**bold**ed\n");
     expect(nodes).toHaveLength(3);
-    expect(nodes[0].type).toBe("text");
-    expect(nodes[1].type).toBe("bold");
-    expect(nodes[2].type).toBe("text");
-    if (nodes[0].type === "text") {
-      expect(nodes[0].value).toBe("un");
-    }
-    if (nodes[1].type === "bold") {
-      expect(nodes[1].children).toHaveLength(1);
-      if (nodes[1].children[0].type === "text") {
-        expect(nodes[1].children[0].value).toBe("bold");
-      }
-    }
-    if (nodes[2].type === "text") {
-      expect(nodes[2].value).toBe("ed");
-    }
+    const [node0, node1, node2] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    if (node1.type !== "bold") unreachable("expected bold");
+    if (node2.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe("un");
+    expect(node1.children).toHaveLength(1);
+    const {
+      children: [boldChild],
+    } = node1;
+    if (boldChild.type !== "text") unreachable("expected text");
+    expect(boldChild.value).toBe("bold");
+    expect(node2.value).toBe("ed");
   });
 });
 
@@ -55,16 +52,21 @@ describe("inline formatting — italic", () => {
   test("_italic_ → italic node", () => {
     const nodes = inlineNodes("_italic_\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("italic");
-    if (nodes[0].type === "italic") {
-      expect(nodes[0].children).toHaveLength(1);
-      if (nodes[0].children[0].type === "text") {
-        expect(nodes[0].children[0].value).toBe("italic");
-      }
-    }
+    const [node0] = nodes;
+    if (node0.type !== "italic") unreachable("expected italic");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [inner0],
+    } = node0;
+    if (inner0.type !== "text") unreachable("expected text");
+    expect(inner0.value).toBe("italic");
   });
 
   test("__unconstrained italic__", () => {
+    // Intentionally shallow — mirrors the bold unconstrained
+    // test above. The boundary behavior of unconstrained marks
+    // is covered by the bold variant; here we only confirm the
+    // mid-word case produces an italic node.
     const nodes = inlineNodes("un__italic__ed\n");
     expect(nodes).toHaveLength(3);
     expect(nodes[1].type).toBe("italic");
@@ -75,16 +77,20 @@ describe("inline formatting — monospace", () => {
   test("`mono` → monospace node", () => {
     const nodes = inlineNodes("`mono`\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("monospace");
-    if (nodes[0].type === "monospace") {
-      expect(nodes[0].children).toHaveLength(1);
-      if (nodes[0].children[0].type === "text") {
-        expect(nodes[0].children[0].value).toBe("mono");
-      }
-    }
+    const [node0] = nodes;
+    if (node0.type !== "monospace") unreachable("expected monospace");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [inner0],
+    } = node0;
+    if (inner0.type !== "text") unreachable("expected text");
+    expect(inner0.value).toBe("mono");
   });
 
   test("``unconstrained mono``", () => {
+    // Shallow by design — see the bold unconstrained test for
+    // full node-structure coverage. This confirms the mark
+    // produces a monospace node mid-word.
     const nodes = inlineNodes("un``mono``ed\n");
     expect(nodes).toHaveLength(3);
     expect(nodes[1].type).toBe("monospace");
@@ -95,16 +101,20 @@ describe("inline formatting — highlight", () => {
   test("#highlight# → highlight node", () => {
     const nodes = inlineNodes("#highlight#\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("highlight");
-    if (nodes[0].type === "highlight") {
-      expect(nodes[0].children).toHaveLength(1);
-      if (nodes[0].children[0].type === "text") {
-        expect(nodes[0].children[0].value).toBe("highlight");
-      }
-    }
+    const [node0] = nodes;
+    if (node0.type !== "highlight") unreachable("expected highlight");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [inner0],
+    } = node0;
+    if (inner0.type !== "text") unreachable("expected text");
+    expect(inner0.value).toBe("highlight");
   });
 
   test("##unconstrained highlight##", () => {
+    // Shallow by design — see the bold unconstrained test for
+    // full node-structure coverage. This confirms the mark
+    // produces a highlight node mid-word.
     const nodes = inlineNodes("un##highlight##ed\n");
     expect(nodes).toHaveLength(3);
     expect(nodes[1].type).toBe("highlight");
@@ -115,55 +125,82 @@ describe("inline formatting — mixed", () => {
   test("text + bold + text + italic", () => {
     const nodes = inlineNodes("This is *bold* and _italic_\n");
     expect(nodes).toHaveLength(4);
-    expect(nodes[0].type).toBe("text");
+    const [node0, , node2] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
     expect(nodes[1].type).toBe("bold");
-    expect(nodes[2].type).toBe("text");
+    if (node2.type !== "text") unreachable("expected text");
     expect(nodes[3].type).toBe("italic");
-    if (nodes[0].type === "text") {
-      expect(nodes[0].value).toBe("This is ");
-    }
-    if (nodes[2].type === "text") {
-      expect(nodes[2].value).toBe(" and ");
-    }
+    expect(node0.value).toBe("This is ");
+    expect(node2.value).toBe(" and ");
   });
 
   test("nested: *_bold italic_*", () => {
     const nodes = inlineNodes("*_bold italic_*\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("bold");
-    if (nodes[0].type === "bold") {
-      expect(nodes[0].children).toHaveLength(1);
-      expect(nodes[0].children[0].type).toBe("italic");
-      if (nodes[0].children[0].type === "italic") {
-        expect(nodes[0].children[0].children).toHaveLength(1);
-        if (nodes[0].children[0].children[0].type === "text") {
-          expect(nodes[0].children[0].children[0].value).toBe("bold italic");
-        }
-      }
-    }
+    const [node0] = nodes;
+    if (node0.type !== "bold") unreachable("expected bold");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [italicChild],
+    } = node0;
+    if (italicChild.type !== "italic") unreachable("expected italic");
+    expect(italicChild.children).toHaveLength(1);
+    const {
+      children: [textChild],
+    } = italicChild;
+    if (textChild.type !== "text") unreachable("expected text");
+    expect(textChild.value).toBe("bold italic");
   });
 });
 
 describe("inline formatting — backslash escapes", () => {
-  test(String.raw`\*not bold* → literal text`, () => {
+  test("backslash before * prevents bold — produces literal text", () => {
     const nodes = inlineNodes(`${String.raw`\*not bold*`}\n`);
     // The escaped mark should produce text, not a bold node.
     // The backslash is preserved in the value for round-trip
     // safety — the formatter re-emits it so re-parsing
     // produces the same AST.
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("text");
-    if (nodes[0].type === "text") {
-      expect(nodes[0].value).toBe(String.raw`\*not bold*`);
-    }
+    const [node0] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe(String.raw`\*not bold*`);
   });
 
-  test(String.raw`\_not italic_ → literal text`, () => {
+  test("backslash before _ prevents italic — produces literal text", () => {
     const nodes = inlineNodes(`${String.raw`\_not italic_`}\n`);
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("text");
-    if (nodes[0].type === "text") {
-      expect(nodes[0].value).toBe(String.raw`\_not italic_`);
+    const [node0] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe(String.raw`\_not italic_`);
+  });
+
+  test("backslash before unconstrained ** — escape prevents bold", () => {
+    // The backslash escape pattern /\\[*_`#]/ matches \* (one
+    // char after backslash). So \** → BackslashEscape(\*) then
+    // the second * begins an unmatched constrained mark that
+    // falls through as text together with the rest.
+    const nodes = inlineNodes(`${String.raw`\**not bold**`}\n`);
+    // After the escape token, the remaining sequence *not bold**
+    // is: one * (potential constrained open) + "not bold" + **
+    // (unconstrained close). A constrained open cannot pair with
+    // an unconstrained close, and the constrained close would
+    // require the char after it to be non-word — here it's *,
+    // which satisfies that, but the token already emitted as
+    // BackslashEscape means the subsequent marks lose pairing
+    // context. In any case the result is all plain text.
+    expect(nodes.length).toBeGreaterThanOrEqual(1);
+    // Regardless of how many text nodes, the full image must be
+    // reconstructable and contain the backslash.
+    const fullText = nodes
+      .map((n) => {
+        if (n.type === "text") return n.value;
+        return "";
+      })
+      .join("");
+    expect(fullText).toContain(String.raw`\*`);
+    // Must NOT produce a bold node — the escape prevents it.
+    for (const node of nodes) {
+      expect(node.type).not.toBe("bold");
     }
   });
 });
@@ -172,32 +209,31 @@ describe("inline formatting — role/style attributes", () => {
   test("[red]#styled text# → highlight with role", () => {
     const nodes = inlineNodes("[red]#styled text#\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("highlight");
-    if (nodes[0].type === "highlight") {
-      expect(nodes[0].role).toBe("red");
-      expect(nodes[0].children).toHaveLength(1);
-      if (nodes[0].children[0].type === "text") {
-        expect(nodes[0].children[0].value).toBe("styled text");
-      }
-    }
+    const [node0] = nodes;
+    if (node0.type !== "highlight") unreachable("expected highlight");
+    expect(node0.role).toBe("red");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [inner0],
+    } = node0;
+    if (inner0.type !== "text") unreachable("expected text");
+    expect(inner0.value).toBe("styled text");
   });
 
   test("[.role]#text# — dot-prefixed role", () => {
     const nodes = inlineNodes("[.role]#text#\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("highlight");
-    if (nodes[0].type === "highlight") {
-      expect(nodes[0].role).toBe(".role");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "highlight") unreachable("expected highlight");
+    expect(node0.role).toBe(".role");
   });
 
   test("[underline]#text# — underline role", () => {
     const nodes = inlineNodes("[underline]#text#\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("highlight");
-    if (nodes[0].type === "highlight") {
-      expect(nodes[0].role).toBe("underline");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "highlight") unreachable("expected highlight");
+    expect(node0.role).toBe("underline");
   });
 });
 
@@ -205,54 +241,50 @@ describe("inline formatting — attribute references", () => {
   test("{name} → attribute reference node", () => {
     const nodes = inlineNodes("{name}\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("attributeReference");
-    if (nodes[0].type === "attributeReference") {
-      expect(nodes[0].name).toBe("name");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "attributeReference")
+      unreachable("expected attributeReference");
+    expect(node0.name).toBe("name");
   });
 
   test("text + attrRef + text", () => {
     const nodes = inlineNodes("See {project-name} for details\n");
     expect(nodes).toHaveLength(3);
-    expect(nodes[0].type).toBe("text");
-    expect(nodes[1].type).toBe("attributeReference");
-    expect(nodes[2].type).toBe("text");
-    if (nodes[0].type === "text") {
-      expect(nodes[0].value).toBe("See ");
-    }
-    if (nodes[1].type === "attributeReference") {
-      expect(nodes[1].name).toBe("project-name");
-    }
-    if (nodes[2].type === "text") {
-      expect(nodes[2].value).toBe(" for details");
-    }
+    const [node0, node1, node2] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    if (node1.type !== "attributeReference")
+      unreachable("expected attributeReference");
+    if (node2.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe("See ");
+    expect(node1.name).toBe("project-name");
+    expect(node2.value).toBe(" for details");
   });
 
   test("{authors} as entire paragraph", () => {
     const nodes = inlineNodes("{authors}\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("attributeReference");
-    if (nodes[0].type === "attributeReference") {
-      expect(nodes[0].name).toBe("authors");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "attributeReference")
+      unreachable("expected attributeReference");
+    expect(node0.name).toBe("authors");
   });
 
   test("{counter:name} → attribute reference", () => {
     const nodes = inlineNodes("{counter:name}\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("attributeReference");
-    if (nodes[0].type === "attributeReference") {
-      expect(nodes[0].name).toBe("counter:name");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "attributeReference")
+      unreachable("expected attributeReference");
+    expect(node0.name).toBe("counter:name");
   });
 
   test("{counter2:name} → attribute reference", () => {
     const nodes = inlineNodes("{counter2:name}\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("attributeReference");
-    if (nodes[0].type === "attributeReference") {
-      expect(nodes[0].name).toBe("counter2:name");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "attributeReference")
+      unreachable("expected attributeReference");
+    expect(node0.name).toBe("counter2:name");
   });
 });
 
@@ -260,19 +292,21 @@ describe("inline formatting — stray/unmatched marks", () => {
   test("lone * in text is plain text", () => {
     const nodes = inlineNodes("a * b\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("text");
-    if (nodes[0].type === "text") {
-      expect(nodes[0].value).toBe("a * b");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe("a * b");
   });
 
   test("unmatched opening * is plain text", () => {
+    // At start of line, * also looks like a list marker in
+    // block context, but in inline context an unmatched *
+    // must fall back to plain text rather than crashing or
+    // producing a partial bold node.
     const nodes = inlineNodes("*no closing mark\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("text");
-    if (nodes[0].type === "text") {
-      expect(nodes[0].value).toBe("*no closing mark");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe("*no closing mark");
   });
 
   test("mid-word * without boundary is plain text", () => {
@@ -281,10 +315,9 @@ describe("inline formatting — stray/unmatched marks", () => {
     // has no boundary before the first * or after the
     // second *, so both are plain text.
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("text");
-    if (nodes[0].type === "text") {
-      expect(nodes[0].value).toBe("a*b*c");
-    }
+    const [node0] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe("a*b*c");
   });
 });
 
@@ -294,14 +327,14 @@ describe("inline formatting — interleaved marks", () => {
     // `_` becomes plain text (no matching open mark).
     const nodes = inlineNodes("*_foo*_\n");
     expect(nodes).toHaveLength(2);
-    expect(nodes[0].type).toBe("bold");
-    if (nodes[0].type === "bold") {
-      expect(nodes[0].children).toHaveLength(1);
-      expect(nodes[0].children[0].type).toBe("text");
-      if (nodes[0].children[0].type === "text") {
-        expect(nodes[0].children[0].value).toBe("_foo");
-      }
-    }
+    const [node0] = nodes;
+    if (node0.type !== "bold") unreachable("expected bold");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [boldInner],
+    } = node0;
+    if (boldInner.type !== "text") unreachable("expected text");
+    expect(boldInner.value).toBe("_foo");
     expect(nodes[1].type).toBe("text");
   });
 });
@@ -323,37 +356,108 @@ describe("inline formatting — deep nesting", () => {
   test("*_`code`_* — three levels", () => {
     const nodes = inlineNodes("*_`code`_*\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("bold");
-    if (nodes[0].type === "bold") {
-      expect(nodes[0].children).toHaveLength(1);
-      expect(nodes[0].children[0].type).toBe("italic");
-      if (nodes[0].children[0].type === "italic") {
-        expect(nodes[0].children[0].children).toHaveLength(1);
-        expect(nodes[0].children[0].children[0].type).toBe("monospace");
-        if (nodes[0].children[0].children[0].type === "monospace") {
-          expect(nodes[0].children[0].children[0].children).toHaveLength(1);
-          expect(nodes[0].children[0].children[0].children[0].type).toBe(
-            "text",
-          );
-          if (nodes[0].children[0].children[0].children[0].type === "text") {
-            expect(nodes[0].children[0].children[0].children[0].value).toBe(
-              "code",
-            );
-          }
-        }
-      }
-    }
+    const [node0] = nodes;
+    if (node0.type !== "bold") unreachable("expected bold");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [italicNode],
+    } = node0;
+    if (italicNode.type !== "italic") unreachable("expected italic");
+    expect(italicNode.children).toHaveLength(1);
+    const {
+      children: [monoNode],
+    } = italicNode;
+    if (monoNode.type !== "monospace") unreachable("expected monospace");
+    expect(monoNode.children).toHaveLength(1);
+    const {
+      children: [textNode],
+    } = monoNode;
+    if (textNode.type !== "text") unreachable("expected text");
+    expect(textNode.value).toBe("code");
   });
 });
 
 describe("inline formatting — unconstrained role highlight", () => {
   test("[role]##text## — role with unconstrained highlight", () => {
+    // `constrained` distinguishes # (constrained, needs word
+    // boundaries) from ## (unconstrained, works anywhere).
+    // The role/style tests above use single # — this test
+    // confirms the AST node correctly records constrained=false
+    // for the ## form, which matters for the printer to
+    // re-emit the right number of # characters.
     const nodes = inlineNodes("[role]##text##\n");
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].type).toBe("highlight");
-    if (nodes[0].type === "highlight") {
-      expect(nodes[0].role).toBe("role");
-      expect(nodes[0].constrained).toBe(false);
-    }
+    const [node0] = nodes;
+    if (node0.type !== "highlight") unreachable("expected highlight");
+    expect(node0.role).toBe("role");
+    expect(node0.constrained).toBe(false);
+  });
+});
+
+describe("inline formatting — cross-line spans", () => {
+  test("*bold spanning two lines* merges across InlineNewline", () => {
+    // The inline mode pops at every \n via InlineNewline, so
+    // marks on different lines are in separate inlineLine CST
+    // nodes. buildInlineNodes merges tokens across lines before
+    // pairing, so the bold span should still close correctly.
+    const nodes = inlineNodes("*bold\nspanning two lines* here.\n");
+    expect(nodes).toHaveLength(2);
+    const [node0] = nodes;
+    if (node0.type !== "bold") unreachable("expected bold");
+    expect(node0.children).toHaveLength(1);
+    const {
+      children: [boldText],
+    } = node0;
+    if (boldText.type !== "text") unreachable("expected text");
+    expect(boldText.value).toBe("bold\nspanning two lines");
+    const [, node1] = nodes;
+    if (node1.type !== "text") unreachable("expected text");
+    expect(node1.value).toBe(" here.");
+  });
+});
+
+describe("inline formatting — InlineChar fallback", () => {
+  test("stray [ is consumed as plain text", () => {
+    const nodes = inlineNodes("text [ more text\n");
+    expect(nodes).toHaveLength(1);
+    const [node0] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe("text [ more text");
+  });
+
+  test("stray { is consumed as plain text", () => {
+    const nodes = inlineNodes("text { more text\n");
+    expect(nodes).toHaveLength(1);
+    const [node0] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe("text { more text");
+  });
+
+  test("[not-a-role] without # is plain text", () => {
+    // RoleAttribute requires a # to follow the ].
+    // Without it, the brackets are consumed by InlineChar
+    // and InlineText as plain text.
+    const nodes = inlineNodes("[not-a-role] more\n");
+    expect(nodes).toHaveLength(1);
+    const [node0] = nodes;
+    if (node0.type !== "text") unreachable("expected text");
+    expect(node0.value).toBe("[not-a-role] more");
+  });
+});
+
+describe("inline formatting — empty paragraph edge case", () => {
+  test("paragraph with only ** produces valid AST, not a crash", () => {
+    // A paragraph of just `**` has formatting marks but no
+    // text content. The AST builder's paragraph() method has
+    // a contentTokens.length > EMPTY guard that falls back to
+    // a synthetic position. Verify this produces a valid
+    // paragraph, not an error.
+    const document = parse("**\n");
+    // Use asParagraph to avoid destructuring lint rule
+    // (parse guarantees at least one child for non-empty input).
+    const paragraph = asParagraph(document.children[0]);
+    // The ** tokens are unmatched marks — they become text.
+    expect(paragraph.children.length).toBeGreaterThanOrEqual(1);
+    expect(paragraph.position).toBeDefined();
   });
 });

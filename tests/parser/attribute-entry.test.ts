@@ -14,6 +14,7 @@
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
+import { unreachable } from "../../src/unreachable.js";
 
 describe("attribute entry parsing", () => {
   // The fundamental contract: `:name: value` must become an attribute
@@ -21,13 +22,14 @@ describe("attribute entry parsing", () => {
   // be treated as prose and reflowed.
   test(":name: value parses as an attribute entry", () => {
     const document = parse(":source-highlighter: rouge\n");
-    expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("attributeEntry");
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("source-highlighter");
-      expect(document.children[0].value).toBe("rouge");
-      expect(document.children[0].unset).toBe(false);
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("source-highlighter");
+    expect(child0.value).toBe("rouge");
+    expect(child0.unset).toBe(false);
   });
 
   // Boolean/flag attributes have no value — just `:toc:`. The parser
@@ -35,13 +37,14 @@ describe("attribute entry parsing", () => {
   // to faithfully reproduce the original syntax.
   test(":name: with no value parses correctly", () => {
     const document = parse(":toc:\n");
-    expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("attributeEntry");
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("toc");
-      expect(document.children[0].value).toBeUndefined();
-      expect(document.children[0].unset).toBe(false);
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("toc");
+    expect(child0.value).toBeUndefined();
+    expect(child0.unset).toBe(false);
   });
 
   // The prefix unset form `:!name:` negates the attribute. The `!`
@@ -49,13 +52,14 @@ describe("attribute entry parsing", () => {
   // printer can reconstruct the original syntax.
   test(":!name: (prefix unset) parses correctly", () => {
     const document = parse(":!toc:\n");
-    expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("attributeEntry");
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("toc");
-      expect(document.children[0].value).toBeUndefined();
-      expect(document.children[0].unset).toBe("prefix");
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("toc");
+    expect(child0.value).toBeUndefined();
+    expect(child0.unset).toBe("prefix");
   });
 
   // The suffix unset form `:name!:` is an alternative syntax. The
@@ -63,13 +67,14 @@ describe("attribute entry parsing", () => {
   // the author's style choice.
   test(":name!: (suffix unset) parses correctly", () => {
     const document = parse(":toc!:\n");
-    expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("attributeEntry");
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("toc");
-      expect(document.children[0].value).toBeUndefined();
-      expect(document.children[0].unset).toBe("suffix");
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("toc");
+    expect(child0.value).toBeUndefined();
+    expect(child0.unset).toBe("suffix");
   });
 
   // Prettier uses locStart/locEnd for cursor tracking and range
@@ -80,7 +85,8 @@ describe("attribute entry parsing", () => {
     expect(document.children[0].position.start.offset).toBe(0);
     expect(document.children[0].position.start.line).toBe(1);
     expect(document.children[0].position.start.column).toBe(1);
-    // ":author: Jane" is 13 chars; end offset is exclusive
+    // ":author: Jane" is 13 chars (offsets 0–12); end is exclusive,
+    // so end.offset = 13 (one past the last character).
     const EXPECTED_END_OFFSET = 13;
     expect(document.children[0].position.end.offset).toBe(EXPECTED_END_OFFSET);
   });
@@ -90,17 +96,17 @@ describe("attribute entry parsing", () => {
   // emit them individually.
   test("consecutive attribute entries are separate nodes", () => {
     const document = parse(":author: Jane\n:revdate: 2024-01-01\n");
-    expect(document.children).toHaveLength(2);
-    expect(document.children[0].type).toBe("attributeEntry");
-    expect(document.children[1].type).toBe("attributeEntry");
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("author");
-      expect(document.children[0].value).toBe("Jane");
-    }
-    if (document.children[1].type === "attributeEntry") {
-      expect(document.children[1].name).toBe("revdate");
-      expect(document.children[1].value).toBe("2024-01-01");
-    }
+    const { children } = document;
+    expect(children).toHaveLength(2);
+    const [child0, child1] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    if (child1.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("author");
+    expect(child0.value).toBe("Jane");
+    expect(child1.name).toBe("revdate");
+    expect(child1.value).toBe("2024-01-01");
   });
 
   // Attribute entries must survive as block-level nodes between
@@ -118,24 +124,27 @@ describe("attribute entry parsing", () => {
   // paragraphs and comments.
   test("attribute entry inside a section", () => {
     const document = parse("== Title\n\n:key: value\n\nText.\n");
-    expect(document.children).toHaveLength(1);
-    if (document.children[0].type === "section") {
-      expect(document.children[0].children).toHaveLength(2);
-      expect(document.children[0].children[0].type).toBe("attributeEntry");
-      expect(document.children[0].children[1].type).toBe("paragraph");
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "section") unreachable("expected section");
+    expect(child0.children).toHaveLength(2);
+    expect(child0.children[0].type).toBe("attributeEntry");
+    expect(child0.children[1].type).toBe("paragraph");
   });
 
   // Attribute names can start with underscores and contain hyphens
-  // and digits. Verify the regex accepts the full range of valid
-  // characters defined by AsciiDoc.
+  // and digits. Verify the parser accepts the full range of valid
+  // name characters defined by AsciiDoc.
   test("attribute name with underscores and digits", () => {
     const document = parse(":_my-attr2: value\n");
-    expect(document.children).toHaveLength(1);
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("_my-attr2");
-      expect(document.children[0].value).toBe("value");
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("_my-attr2");
+    expect(child0.value).toBe("value");
   });
 
   // A value with extra spaces after the colon should preserve only
@@ -143,26 +152,29 @@ describe("attribute entry parsing", () => {
   // not part of the value).
   test("value with leading whitespace is trimmed", () => {
     const document = parse(":key:   spaced value\n");
-    expect(document.children).toHaveLength(1);
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("key");
-      expect(document.children[0].value).toBe("spaced value");
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("key");
+    expect(child0.value).toBe("spaced value");
   });
 
   // Unset with a value (`:!name: value`) is unusual but syntactically
-  // valid. The regex captures both the unset bang and the value. This
-  // documents the parser's behavior for this edge case — the unset
-  // form is "prefix" and the value is preserved.
+  // valid in AsciiDoc. This documents the expected behavior for this
+  // edge case: both the unset form ("prefix") and the value must be
+  // preserved independently on the AST node.
   test("unset with value (:!name: value) preserves both", () => {
     const document = parse(":!experimental: value\n");
-    expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("attributeEntry");
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("experimental");
-      expect(document.children[0].unset).toBe("prefix");
-      expect(document.children[0].value).toBe("value");
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("experimental");
+    expect(child0.unset).toBe("prefix");
+    expect(child0.value).toBe("value");
   });
 
   // A value that is only whitespace (`:key:   `) should be treated
@@ -172,11 +184,12 @@ describe("attribute entry parsing", () => {
   // as empty strings.
   test("whitespace-only value treated as no value", () => {
     const document = parse(":key:   \n");
-    expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("attributeEntry");
-    if (document.children[0].type === "attributeEntry") {
-      expect(document.children[0].name).toBe("key");
-      expect(document.children[0].value).toBeUndefined();
-    }
+    const { children } = document;
+    expect(children).toHaveLength(1);
+    const [child0] = children;
+    if (child0.type !== "attributeEntry")
+      unreachable("expected attributeEntry");
+    expect(child0.name).toBe("key");
+    expect(child0.value).toBeUndefined();
   });
 });

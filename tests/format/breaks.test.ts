@@ -42,3 +42,33 @@ describe("page break formatting", () => {
     expect(await formatAdoc(input)).toBe(input);
   });
 });
+
+describe("hard line break formatting", () => {
+  // A hard line break (` +` at end of line) in a paragraph
+  // must survive formatting. The ` +\n` is semantic — it
+  // forces a line break in the rendered output.
+  test("hard line break in paragraph is preserved", async () => {
+    const input = "First line +\nsecond line.\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Hard line break in a list item must also be preserved.
+  test("hard line break in list item is preserved", async () => {
+    const input = "* First line +\nsecond line.\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Multiple hard line breaks in sequence.
+  test("multiple hard line breaks preserved", async () => {
+    const input = "Line one +\nline two +\nline three.\n";
+    expect(await formatAdoc(input)).toBe(input);
+  });
+
+  // Formatting a hard line break must be idempotent.
+  test("hard line break formatting is idempotent", async () => {
+    const input = "First line +\nsecond line.\n";
+    const first = await formatAdoc(input);
+    const second = await formatAdoc(first);
+    expect(second).toBe(first);
+  });
+});

@@ -7,10 +7,23 @@
 import type { IToken } from "chevrotain";
 import type { Location } from "../ast.js";
 import { FIRST, FIRST_COLUMN, FIRST_LINE, LAST_ELEMENT } from "../constants.js";
-// Chevrotain's endOffset is inclusive; we add 1 for Prettier's
-// exclusive convention.
+// Chevrotain's endOffset and endColumn are both inclusive (pointing
+// at the last character). Our AST uses exclusive end positions
+// throughout: offset follows Prettier's locEnd convention, and
+// column is kept consistent with offset so callers don't need to
+// track two different conventions.
 const ONE_PAST_END = 1;
 
+/**
+ * Assemble a Location from raw coordinates. Centralising
+ * construction here insulates callers from the field names and
+ * makes it easy to grep for every place a Location is created.
+ * @param offset - Zero-based character offset from the very start
+ *   of the document source (not a substring offset).
+ * @param line - One-based line number.
+ * @param column - One-based column number.
+ * @returns A Location value ready to embed directly in an AST node.
+ */
 export function makeLocation(
   offset: number,
   line: number,
@@ -19,10 +32,17 @@ export function makeLocation(
   return { offset, line, column };
 }
 
-// Chevrotain token positions are nullable (undefined for
-// tokens inserted by error recovery). We default to 1:1:0
-// since our parser runs in non-error-recovery mode and these
-// should never actually be undefined.
+/**
+ * Build a Location for the start of a Chevrotain token.
+ * Chevrotain makes startLine and startColumn nullable to support
+ * error-recovery scenarios where a synthetic token may have no
+ * valid position. We disable error recovery, so every real token
+ * is fully positioned and the fallback defaults (line 1, column 1)
+ * are unreachable in practice.
+ * @param token - Any token produced by our lexer.
+ * @returns Location at the token's first character, using
+ *   document-absolute coordinates.
+ */
 export function tokenStartLocation(token: IToken): Location {
   return makeLocation(
     token.startOffset,
@@ -31,8 +51,17 @@ export function tokenStartLocation(token: IToken): Location {
   );
 }
 
-// Same nullability handling as tokenStartLocation, plus the
-// inclusive-to-exclusive conversion (+1) that Prettier expects.
+/**
+ * Build a Location for the exclusive end of a Chevrotain token.
+ * Both endOffset and endColumn are inclusive in Chevrotain (they
+ * point at the last character). We add 1 to each: the offset
+ * adjustment satisfies Prettier's locEnd convention; the column
+ * adjustment keeps it consistent so callers always work with
+ * exclusive end positions regardless of which field they use.
+ * @param token - Any token produced by our lexer.
+ * @returns Location one past the token's last character, using
+ *   document-absolute coordinates.
+ */
 export function tokenEndLocation(token: IToken): Location {
   return makeLocation(
     (token.endOffset ?? FIRST) + ONE_PAST_END,
@@ -41,10 +70,15 @@ export function tokenEndLocation(token: IToken): Location {
   );
 }
 
-// The document's end position can't come from a token because
-// the last token may be followed by trailing whitespace/newlines
-// that the lexer consumed but didn't emit. We compute it from
-// the raw source text instead.
+/**
+ * Compute the document's end position from source text.
+ * Can't use the last token because trailing whitespace
+ * and newlines are consumed by the lexer but not emitted.
+ * @param text - The complete document source (not a substring).
+ * @returns Location at the exclusive end of the source:
+ *   offset = text.length, line = number of lines,
+ *   column = one past the last character on the final line.
+ */
 export function computeEnd(text: string): Location {
   const lines = text.split("\n");
   const lastLine = lines.at(LAST_ELEMENT) ?? "";

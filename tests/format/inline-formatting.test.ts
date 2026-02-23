@@ -1,11 +1,26 @@
 /**
- * Format tests for inline formatting — verifies that the printer
- * produces correct output for bold, italic, monospace, highlight,
- * and attribute references.
+ * Printer-level format tests for inline formatting.
+ *
+ * These tests exercise the full pipeline (parse → AST → print)
+ * and verify that the printer re-emits correct AsciiDoc source.
+ * They are complementary to `tests/parser/inline-formatting.test.ts`,
+ * which tests AST shape only. Tests here cover:
+ *
+ *   - Round-trip preservation: the printer emits valid AsciiDoc
+ *     that re-parses to an equivalent AST (idempotency).
+ *   - Reflow: the printer respects `printWidth` by breaking
+ *     paragraph text with Prettier's fill() builder, including
+ *     inside inline formatting spans.
+ *   - Edge cases: stray marks, backslash escapes, cross-line
+ *     spans, and other inputs where the printer must not corrupt
+ *     the source semantics.
  */
 import { describe, test, expect } from "vitest";
 import { formatAdoc } from "../helpers.js";
 
+// Basic preservation: each constrained and unconstrained form of
+// every formatting mark must survive a format round-trip unchanged
+// when the paragraph fits within printWidth (default 80).
 describe("inline formatting — format output", () => {
   test("*bold* is preserved", async () => {
     const input = "*bold*\n";
@@ -57,7 +72,10 @@ describe("inline formatting — format output", () => {
     expect(await formatAdoc(input)).toBe("*_bold italic_*\n");
   });
 
-  test(String.raw`backslash escapes \*not bold* are preserved`, async () => {
+  test("backslash-escaped bold is preserved", async () => {
+    // String.raw preserves the backslash literally. The `\n` at
+    // the end is outside the raw template, so it is a real newline
+    // (the paragraph terminator), not a literal backslash-n.
     const input = `${String.raw`\*not bold*`}\n`;
     expect(await formatAdoc(input)).toBe(`${String.raw`\*not bold*`}\n`);
   });
@@ -87,6 +105,10 @@ describe("inline formatting — format output", () => {
     expect(await formatAdoc(input)).toBe("{counter:name}\n");
   });
 
+  // Idempotency is a core Prettier contract: formatting an already-
+  // formatted file must produce the same output. Without this check,
+  // a printer bug might produce output that triggers a different
+  // reflow on the second pass, causing an infinite diff loop.
   test("formatting is idempotent", async () => {
     const input = "This is *bold* and _italic_ with `mono` and {attr}.\n";
     const first = await formatAdoc(input);
@@ -95,37 +117,50 @@ describe("inline formatting — format output", () => {
   });
 });
 
+// Reflow exercises the fill()-based printer path. The printer
+// emits formatting marks as array elements inside the fill group
+// (e.g. ["*", ...words, "*"]), so the opening mark attaches to
+// the first word and the closing mark attaches to the last word.
+// This means reflow can split text inside a span across lines
+// while keeping the marks with their adjacent words.
 describe("inline formatting — reflow with inline marks", () => {
-  test("reflow preserves bold span across line break", async () => {
-    // The bold span should not be split across lines.
+  test("reflow splits bold span across lines", async () => {
+    // printWidth: 10 forces a break after every word. The opening
+    // * attaches to "bold" (first word) and the closing * attaches
+    // to "here" (last word), so line breaks appear between words
+    // inside the span.
     const input = "*bold text here*\n";
     const result = await formatAdoc(input, { printWidth: 10 });
-    // Bold marks must stay paired — verify the result re-parses
-    // correctly by formatting again.
-    const second = await formatAdoc(result, { printWidth: 10 });
-    expect(second).toBe(result);
+    expect(result).toBe("*bold\ntext\nhere*\n");
   });
 
   test("reflow wraps around inline marks", async () => {
+    // Verifies that a line break can appear immediately after a
+    // closing mark (*bold*) when the line overflows. The space
+    // after *bold* is the break point; the mark itself must not
+    // be orphaned on its own line.
     const input = "Some text before *bold* and after bold text here.\n";
     const result = await formatAdoc(input, { printWidth: 30 });
-    // Must be idempotent.
-    const second = await formatAdoc(result, { printWidth: 30 });
-    expect(second).toBe(result);
+    expect(result).toBe("Some text before *bold* and\nafter bold text here.\n");
   });
 
   test("attribute reference is not broken by reflow", async () => {
+    // Attribute references are emitted as a single Doc string
+    // token ({...}), not split into fill words. Reflow can place
+    // a line break before or after the reference at a word
+    // boundary, but never inside it.
     const input =
       "This is a long paragraph with {attribute-name} in the middle of it.\n";
     const result = await formatAdoc(input, { printWidth: 30 });
-    // The attribute reference should remain intact.
-    expect(result).toContain("{attribute-name}");
-    // Must be idempotent.
-    const second = await formatAdoc(result, { printWidth: 30 });
-    expect(second).toBe(result);
+    expect(result).toBe(
+      "This is a long paragraph with\n{attribute-name} in the middle\nof it.\n",
+    );
   });
 });
 
+// Inputs that exercise parser fallback paths or printer edge
+// cases. Each test verifies the full round-trip: parse does not
+// crash, and the printer re-emits byte-identical source.
 describe("inline formatting — edge case round-trips", () => {
   test("lone * in text is preserved", async () => {
     const input = "a * b\n";
@@ -145,5 +180,50 @@ describe("inline formatting — edge case round-trips", () => {
   test("[role]##text## round-trips", async () => {
     const input = "[role]##text##\n";
     expect(await formatAdoc(input)).toBe("[role]##text##\n");
+  });
+
+  test("backslash-escaped unconstrained bold is preserved", async () => {
+    // Same String.raw / \n construction as the constrained escape
+    // test above: the backslash is literal, the trailing \n is a
+    // real newline.
+    const input = `${String.raw`\**not bold**`}\n`;
+    expect(await formatAdoc(input)).toBe(`${String.raw`\**not bold**`}\n`);
+  });
+
+  test("cross-line bold span is joined by reflow", async () => {
+    // The parser merges inline tokens across source lines before
+    // pairing marks, so *bold\ntext* is a single bold span whose
+    // text child contains the newline as whitespace. The printer
+    // then reflowing treats that newline as a word separator, and
+    // since the paragraph fits in 80 cols, the words are joined
+    // on one line with a space.
+    const input = "*bold\ntext* here.\n";
+    expect(await formatAdoc(input)).toBe("*bold text* here.\n");
+  });
+
+  test("stray [ in text round-trips", async () => {
+    const input = "text [ more text\n";
+    expect(await formatAdoc(input)).toBe("text [ more text\n");
+  });
+
+  test("stray { in text round-trips", async () => {
+    const input = "text { more text\n";
+    expect(await formatAdoc(input)).toBe("text { more text\n");
+  });
+});
+
+// Blank-line normalisation: the printer must emit exactly one blank
+// line between a section heading and its first paragraph, regardless
+// of how many blank lines appear in the source.
+describe("inline formatting — blank line normalisation", () => {
+  test("multiple blank lines between heading and text are collapsed", async () => {
+    // AsciiDoc requires exactly one blank line to separate a
+    // section heading from its first paragraph. The printer must
+    // normalise two consecutive blank lines (\n\n\n = heading +
+    // two newlines) down to one, so re-parsing produces the same
+    // section structure.
+    const input = "== Section\n\n\nSome text.\n";
+    const result = await formatAdoc(input);
+    expect(result).toBe("== Section\n\nSome text.\n");
   });
 });

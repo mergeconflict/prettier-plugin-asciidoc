@@ -2,7 +2,13 @@ import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { ParentBlockNode } from "../../src/ast.js";
 
-// Helper to extract the first parent block from parsed children.
+/**
+ * Extracts the first child as a ParentBlockNode. Throws
+ * if it is not a parent block, surfacing test setup
+ * errors early with a clear message.
+ * @param children - parsed document children array
+ * @returns the first child narrowed to ParentBlockNode
+ */
 function firstParentBlock(
   children: ReturnType<typeof parse>["children"],
 ): ParentBlockNode {
@@ -45,7 +51,8 @@ describe("example block parsing", () => {
     expect(block.children[1].type).toBe("paragraph");
   });
 
-  // Extended example delimiter (more than 4 equals signs).
+  // 6-character example delimiter: confirms any repeat length
+  // >= 4 is accepted, not just exactly 4.
   test("extended delimiter length", () => {
     const { children } = parse("======\nContent.\n======\n");
     const block = firstParentBlock(children);
@@ -148,7 +155,8 @@ describe("parent block context", () => {
     expect(children[2].type).toBe("paragraph");
   });
 
-  // Position tracking: start position of parent block.
+  // Position tracking: all three fields (line, column, offset)
+  // on the open delimiter's start position are verified.
   test("position tracking", () => {
     const { children } = parse("====\nContent.\n====\n");
     const block = firstParentBlock(children);
@@ -183,11 +191,13 @@ describe("parent block context", () => {
 describe("delimiter length matching", () => {
   // The close delimiter must be exactly the same length as the
   // open delimiter. A shorter delimiter is NOT the close —
-  // it starts a nested block or becomes content/error recovery.
+  // it opens a nested block of the same type instead.
   test("example block close must match open length", () => {
     // Open with 5 `=`, attempt close with 4 `=` — the 4-char
-    // line is not the close delimiter. The `====` starts a
-    // nested (empty) example block inside the unclosed outer.
+    // line is not the close delimiter for the outer block.
+    // Instead it opens a nested example block. The second
+    // `====` immediately closes that nested block (empty),
+    // leaving the outer 5-char block unclosed.
     const { children } = parse("=====\nContent.\n====\n====\n");
     expect(children).toHaveLength(1);
     const block = firstParentBlock(children);
@@ -260,8 +270,10 @@ describe("delimiter length matching", () => {
     expect(inner.children[0].type).toBe("paragraph");
   });
 
-  // Open blocks use exactly 2 dashes — no length matching
-  // needed. This test ensures they still work unchanged.
+  // Open blocks use a fixed `--` delimiter (not a repeating
+  // pattern), so delimiter-length matching doesn't apply.
+  // This test confirms open blocks parse correctly alongside
+  // the variable-length example/sidebar/quote blocks.
   test("open blocks are unaffected", () => {
     const { children } = parse("--\nContent.\n--\n");
     expect(children).toHaveLength(1);

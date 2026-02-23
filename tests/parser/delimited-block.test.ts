@@ -1,17 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
-import type { DelimitedBlockNode } from "../../src/ast.js";
-
-// Helper to extract the first delimited block from parsed children.
-function firstDelimitedBlock(
-  children: ReturnType<typeof parse>["children"],
-): DelimitedBlockNode {
-  const [block] = children;
-  if (block.type !== "delimitedBlock") {
-    throw new Error(`Expected delimitedBlock, got ${block.type}`);
-  }
-  return block;
-}
+import { firstDelimitedBlock } from "../helpers.js";
 
 describe("listing block parsing", () => {
   // The simplest listing block: `----` delimiters around content.
@@ -136,7 +125,9 @@ describe("passthrough block parsing", () => {
 });
 
 describe("delimited block context", () => {
-  // Delimited block between paragraphs, separated by blank lines.
+  // Delimited block between paragraphs. AsciiDoc requires at least
+  // one blank line before and after the block to prevent it from
+  // being consumed as paragraph continuation.
   test("between paragraphs", () => {
     const { children } = parse(
       "Before paragraph.\n\n----\ncode here\n----\n\nAfter paragraph.\n",
@@ -147,7 +138,10 @@ describe("delimited block context", () => {
     expect(children[2].type).toBe("paragraph");
   });
 
-  // Position tracking: the node has correct start/end positions.
+  // Position tracking: the node starts at the opening delimiter.
+  // line and column are 1-based; offset is 0-based (see Location in
+  // ast.ts). Only the start is asserted here; end position testing
+  // is covered by dedicated position tests in other suites.
   test("position tracking", () => {
     const { children } = parse("----\ncode\n----\n");
     const block = firstDelimitedBlock(children);

@@ -10,7 +10,8 @@
  * indivisible unit.
  *
  * The patterns here mirror the line-start-sensitive tokens
- * defined in src/parse/tokens.ts.
+ * defined in src/parse/tokens.ts (and src/parse/inline-macro-tokens.ts
+ * for the macro subset).
  */
 import { doc, type Doc } from "prettier";
 import { EMPTY, MIN_DELIMITER_LENGTH } from "./constants.js";
@@ -41,15 +42,20 @@ const SPECIFIC_PATTERNS = [
   /^<(?:\d+|\.)>$/v, // callout list marker: <1>, <.>
   /^:[!]?[A-Za-z_][\w\u002D]*[!]?:$/v, // attribute entry: :name:
   /^(?:NOTE|TIP|IMPORTANT|CAUTION|WARNING):$/v, // admonition
-  /^\[\[/v, // block anchor: [[id]]
   /^\[[^\]]*\]$/v, // block attribute list: [source]
 ];
 
 // ── Detection ──────────────────────────────────────────────
 
-// True if `word`, placed at column 0 by fill() reflow, would
-// be re-parsed as AsciiDoc block syntax. Such words must be
-// glued to their predecessor (see wordsToFillParts).
+/**
+ * Detect words that would become AsciiDoc block syntax
+ * if fill() placed them at column 0. Such words must be
+ * glued to their predecessor in wordsToFillParts.
+ * @param word - A single non-empty whitespace-delimited token
+ *   from the paragraph text, as produced by String.split on
+ *   whitespace. Callers guarantee it contains no whitespace.
+ * @returns True when the word matches block syntax
+ */
 function isBlockSyntaxAtLineStart(word: string): boolean {
   // Block title: .Title, .gitignore
   if (BLOCK_TITLE.test(word)) {
@@ -66,7 +72,14 @@ function isBlockSyntaxAtLineStart(word: string): boolean {
   // delimiter char. Covers section markers (==), list markers
   // (* - .), block delimiters (---- ****), thematic/page
   // breaks (''' <<<), open block (--), quote block (____).
-  if (DELIMITER_CHARS.has(first) && isRepeatedChar(word, first)) {
+  // Exception: single `+` is a list continuation only when
+  // alone on a line; `+ text` at line start is safe.
+  // Multi-char `++++` (passthrough delimiter) IS dangerous.
+  if (
+    DELIMITER_CHARS.has(first) &&
+    isRepeatedChar(word, first) &&
+    word !== "+"
+  ) {
     return true;
   }
 
@@ -81,11 +94,21 @@ function isBlockSyntaxAtLineStart(word: string): boolean {
   }
 
   // Remaining specific patterns (callout, attribute entry,
-  // admonition, block anchor, block attribute list).
+  // admonition, block attribute list).
   return SPECIFIC_PATTERNS.some((pattern) => pattern.test(word));
 }
 
-// True when every character in `word` is `char`.
+/**
+ * Check whether every character in a word is the same
+ * character. Used to detect pure delimiter words like
+ * `====` or `----`.
+ * @param word - The word to test; must be non-empty.
+ * @param char - The single character expected at every
+ *   position. Callers always pass `word[0]`, so the function
+ *   checks uniformity rather than independently choosing the
+ *   expected character.
+ * @returns True when all characters match `char`
+ */
 function isRepeatedChar(word: string, char: string): boolean {
   for (const ch of word) {
     if (ch !== char) {
@@ -95,35 +118,77 @@ function isRepeatedChar(word: string, char: string): boolean {
   return true;
 }
 
+/**
+ * Detect words that would become AsciiDoc syntax when
+ * placed at end of a line (before a fill() break). Such
+ * words are glued to their successor so fill() breaks
+ * before the word rather than after it.
+ * @param word - A single non-empty whitespace-delimited token
+ *   from the paragraph text.
+ * @returns True when placing this word at line end would
+ *   produce AsciiDoc syntax in the reflowed output
+ */
+function isDangerousAtLineEnd(word: string): boolean {
+  // A bare `+` preceded by a space (from fill() joining)
+  // would become ` +\n` — a hard line break.
+  return word === "+";
+}
+
 // ── Public API ─────────────────────────────────────────────
 
-// Converts a list of words into a Doc array suitable for
-// fill(). Words are interleaved with `line` so fill() can
-// break between them. Words that would become block syntax at
-// line start are merged with their predecessor via a literal
-// space, making the pair an indivisible content item — fill()
-// will break *before* the pair rather than between them.
+/**
+ * Convert a word list into a Doc array for fill().
+ * Words are interleaved with `line` so fill() can break
+ * between them. Two safety mechanisms prevent reflow
+ * from creating syntax:
+ * 1. Words dangerous at line START are glued to their
+ *    predecessor so fill() breaks before the pair.
+ * 2. Words dangerous at line END (`+`) are glued to
+ *    their successor so fill() breaks before them.
+ * @param words - Array of whitespace-delimited tokens already
+ *   split from the paragraph text. Each element is non-empty
+ *   and contains no whitespace. The array itself may be empty,
+ *   in which case an empty Doc array is returned.
+ * @returns Doc array suitable for Prettier's fill()
+ */
 export function wordsToFillParts(words: string[]): Doc[] {
   const parts: Doc[] = [];
-  // Pending content group: accumulates words that must stay on
-  // the same line. Flushed when the next word is safe.
+  // Pending content group: accumulates words that must stay
+  // on the same line. Flushed when the next word is safe.
   let pending: Doc | undefined = undefined;
+  // When true, the next word must be glued to pending
+  // (because pending ends with a line-end-dangerous word).
+  let glueNext = false;
   for (const word of words) {
     if (pending === undefined) {
       // First word — nothing to merge with yet.
       pending = word;
-    } else if (isBlockSyntaxAtLineStart(word)) {
-      // Dangerous word: merge with predecessor using a literal
-      // space so fill() can't break between them.
+    } else if (glueNext || isBlockSyntaxAtLineStart(word)) {
+      // Merge with pending: either the previous word is
+      // dangerous at line end, or this word is dangerous
+      // at line start.
       pending = [pending, " ", word];
+      glueNext = false;
     } else {
-      // Safe word: flush the pending group and start a new one.
+      // Safe word: flush the pending group and start new.
       if (parts.length > EMPTY) {
         parts.push(line);
       }
       parts.push(pending);
       pending = word;
     }
+    // If this word is dangerous at line end, the *next*
+    // word must be glued to it.
+    if (isDangerousAtLineEnd(word)) {
+      glueNext = true;
+    }
+  }
+  // If the last word was dangerous at line end and had no
+  // successor to glue to, it will always appear at end of
+  // line (the paragraph's last line). Escape it so AsciiDoc
+  // doesn't re-parse ` +\n` as a hard line break.
+  if (pending === "+") {
+    pending = String.raw`\+`;
   }
   // Flush the last pending group.
   if (pending !== undefined) {
@@ -132,5 +197,6 @@ export function wordsToFillParts(words: string[]): Doc[] {
     }
     parts.push(pending);
   }
+
   return parts;
 }

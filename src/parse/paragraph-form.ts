@@ -31,7 +31,23 @@ import type {
   ParentBlockNode,
   ParagraphNode,
 } from "../ast.js";
+import {
+  linkToSource,
+  xrefToSource,
+  anchorToSource,
+  inlineImageToSource,
+  kbdToSource,
+  buttonToSource,
+  menuToSource,
+  footnoteToSource,
+  passthroughToSource,
+} from "../serialize-inline.js";
 import { FIRST, NEWLINE_LENGTH, NEXT, PAIR_LENGTH } from "../constants.js";
+
+// Matches any single word composed entirely of uppercase ASCII letters.
+// Used by getAdmonitionVariant to recognise NOTE, TIP, IMPORTANT, etc.
+// Module-level so the regex is compiled once, not on every call.
+const UPPERCASE_WORD = /^[A-Z]+$/v;
 
 // Maps recognized first positional attribute values to the
 // `DelimitedBlockNode.variant` they produce. AsciiDoc `source`
@@ -90,21 +106,39 @@ const VERBATIM_MASQUERADES: ReadonlyMap<
   ],
 ]);
 
-// Extracts the first positional attribute (the style) from
-// a block attribute list value. The value is the text between
-// brackets, e.g. "source,ruby" → "source", "verse" → "verse".
+/**
+ * Extracts the first positional attribute (the style) from
+ * a block attribute list value. The value is the text
+ * between brackets, e.g. "source,ruby" -> "source".
+ * @param value - The `.value` field of a
+ *   `BlockAttributeListNode`: the raw text inside the
+ *   brackets, not including the brackets themselves
+ *   (e.g. `"source,ruby"`).
+ * @returns The trimmed style name (everything before the
+ *   first comma).
+ */
 function extractStyle(value: string): string {
   // Split on the first comma to isolate the style name from
-  // any additional positional attributes (e.g. language).
-  // Shorthand attributes like "#myid" and ".role" pass through
-  // unchanged — they don't match any style lookup table, so
-  // they're implicitly excluded from masquerade/form matching.
+  // any additional positional attributes (e.g. language in
+  // `[source,ruby]`). Shorthand values like `#myid` and `.role`
+  // (no comma) are returned as-is; they won't match any entry
+  // in the caller's lookup tables, so callers don't need to
+  // special-case them.
   const [first] = value.split(",");
   return first.trim();
 }
 
-// Checks whether a block attribute list node declares a
-// recognized paragraph-form style.
+/**
+ * Checks whether a block attribute list declares a
+ * recognized paragraph-form style (source, listing,
+ * literal, pass, verse, quote, example, sidebar).
+ * @param node - The attribute list node whose first
+ *   positional attribute is tested against the
+ *   `PARAGRAPH_FORM_STYLES` lookup table.
+ * @returns The target delimited-block variant, or
+ *   `undefined` if the style is not a paragraph-form
+ *   style.
+ */
 function getParagraphFormVariant(
   node: BlockAttributeListNode,
 ): DelimitedBlockNode["variant"] | undefined {
@@ -112,29 +146,47 @@ function getParagraphFormVariant(
   return PARAGRAPH_FORM_STYLES.get(style);
 }
 
-// Checks whether a block attribute list declares an admonition
-// type (NOTE, TIP, IMPORTANT, CAUTION, WARNING). Returns the
-// lowercase variant name, or undefined if not an admonition.
+/**
+ * Checks whether a block attribute list declares an
+ * admonition type (NOTE, TIP, IMPORTANT, CAUTION,
+ * WARNING, or custom types like EXERCISE).
+ * @param node - The attribute list node whose first
+ *   positional attribute is tested. Only single
+ *   uppercase words match; styles with commas, dots,
+ *   or hashes (e.g. `[source,ruby]`) are excluded.
+ * @returns The lowercase admonition variant name, or
+ *   `undefined` if the style is not an admonition.
+ */
 function getAdmonitionVariant(
   node: BlockAttributeListNode,
 ): string | undefined {
   const style = extractStyle(node.value).toUpperCase();
-  // Accept any single uppercase word as an admonition variant.
-  // This covers the five built-in types (NOTE, TIP, etc.) as
-  // well as custom styles like EXERCISE. Attribute lists with
-  // commas, dots, hashes, or other special characters (e.g.
-  // [source,ruby], [#myid], [.role]) won't match.
-  const UPPERCASE_WORD = /^[A-Z]+$/v;
+  // Any single uppercase word is treated as an admonition type.
+  // AsciiDoc defines five (NOTE, TIP, IMPORTANT, CAUTION, WARNING)
+  // but the spec allows custom variants. Using uppercase as the
+  // discriminator means [source,ruby], [#myid], and [.role] are
+  // naturally excluded — extractStyle already trims the first token,
+  // and the comma/hash/dot residues prevent an all-uppercase match.
   if (UPPERCASE_WORD.test(style)) {
     return style.toLowerCase();
   }
   return undefined;
 }
 
-// Checks whether a block attribute list declares a verbatim
-// masquerade style for the given parent block variant. Returns
-// the target `DelimitedBlockNode.variant`, or undefined if
-// this combination doesn't trigger a masquerade.
+/**
+ * Checks whether a block attribute list declares a verbatim
+ * masquerade style for the given parent block variant.
+ * A masquerade changes the block's content model from
+ * compound (parsed children) to verbatim (raw string).
+ * @param attribute - The attribute list node whose style
+ *   is looked up in the `VERBATIM_MASQUERADES` table.
+ * @param parentVariant - The variant of the parent block
+ *   that carries the attribute list (e.g. "quote",
+ *   "open").
+ * @returns The target delimited-block variant, or
+ *   `undefined` if this combination does not trigger a
+ *   masquerade.
+ */
 function getVerbatimMasquerade(
   attribute: BlockAttributeListNode,
   parentVariant: ParentBlockNode["variant"],
@@ -147,15 +199,25 @@ function getVerbatimMasquerade(
   return styleMap.get(style);
 }
 
-// Extracts the raw verbatim content from a parent block by
-// slicing the source text between the open and close
-// delimiters. The parent block's position spans from the
-// start of the open delimiter to one past the end of the
-// close delimiter (standard Prettier end-exclusive convention).
-// Invariant: `node.position.start` is the first character of
-// the open delimiter line; `node.position.end` is one past the
-// last character of the close delimiter line. We rely on these
-// offsets to slice the raw source text between delimiters.
+/**
+ * Extracts the raw verbatim content from a parent block
+ * by slicing the source text between its open and close
+ * delimiters. Needed for masquerading: the parent block's
+ * children were parsed as compound content, but the
+ * masquerade converts the block to verbatim, so we must
+ * recover the original source text instead.
+ *
+ * Invariant: `node.position.start` is the first character
+ * of the open delimiter line; `node.position.end` is one
+ * past the last character of the close delimiter line
+ * (standard Prettier end-exclusive convention).
+ * @param node - The parent block whose delimiter-enclosed
+ *   content is extracted.
+ * @param sourceText - The full original source text,
+ *   used for offset-based slicing.
+ * @returns The raw text between delimiters, or an empty
+ *   string if the block has no content.
+ */
 function extractParentBlockContent(
   node: ParentBlockNode,
   sourceText: string,
@@ -186,16 +248,34 @@ function extractParentBlockContent(
   return sourceText.slice(contentStart, closeNewline);
 }
 
-// Converts the text content of a paragraph node into a
-// verbatim string for the delimited block's content field.
-// Walks all inline children, extracting raw text from text
-// nodes and preserving formatting marks from span nodes.
+/**
+ * Converts a paragraph's inline children into a verbatim
+ * string for the delimited block's `content` field.
+ * Delegates each child to `inlineToText`, which handles
+ * every inline node type (text, spans, macros, anchors,
+ * hard breaks, etc.), so the paragraph-form block's
+ * content faithfully reproduces the original source.
+ * @param paragraph - The paragraph node whose children
+ *   are serialized back to AsciiDoc source text.
+ * @returns The concatenated source text of all inline
+ *   children.
+ */
 function paragraphToContent(paragraph: ParagraphNode): string {
   return paragraph.children.map((child) => inlineToText(child)).join("");
 }
 
-// Extracts the raw source text from an inline node,
-// including any formatting marks for span nodes.
+/**
+ * Serializes an inline AST node back to its AsciiDoc
+ * source representation. Handles all inline node types:
+ * plain text, attribute references, formatting spans
+ * (bold, italic, monospace, highlight), macros (links,
+ * xrefs, images, kbd, btn, menu, footnote, passthrough),
+ * and hard line breaks.
+ * @param node - The inline node to serialize.
+ * @returns The AsciiDoc source text for the node,
+ *   including any constrained/unconstrained formatting
+ *   marks.
+ */
 function inlineToText(node: InlineNode): string {
   switch (node.type) {
     case "text": {
@@ -225,6 +305,36 @@ function inlineToText(node: InlineNode): string {
       const inner = node.children.map((child) => inlineToText(child)).join("");
       return `${rolePrefix}${mark}${inner}${mark}`;
     }
+    case "link": {
+      return linkToSource(node);
+    }
+    case "xref": {
+      return xrefToSource(node);
+    }
+    case "inlineAnchor": {
+      return anchorToSource(node);
+    }
+    case "inlineImage": {
+      return inlineImageToSource(node);
+    }
+    case "kbd": {
+      return kbdToSource(node);
+    }
+    case "btn": {
+      return buttonToSource(node);
+    }
+    case "menu": {
+      return menuToSource(node);
+    }
+    case "footnote": {
+      return footnoteToSource(node);
+    }
+    case "passthrough": {
+      return passthroughToSource(node);
+    }
+    case "hardLineBreak": {
+      return " +\n";
+    }
   }
 }
 
@@ -247,8 +357,14 @@ function inlineToText(node: InlineNode): string {
  * Masquerade checks run BEFORE admonition checks because
  * styles like `verse` and `source` are not admonitions, even
  * though they match the uppercase-word pattern.
- *
- * Returns a new array (does not mutate the input).
+ * @param blocks - Flat array of block-level AST nodes
+ *   produced by the CST visitor, before section nesting.
+ * @param sourceText - The full original source text,
+ *   needed for extracting raw content when masquerading
+ *   parent blocks to verbatim.
+ * @returns A new array with paragraph-form conversions,
+ *   masquerades, and admonition transforms applied. The
+ *   input array is not mutated.
  */
 export function convertParagraphFormBlocks(
   blocks: BlockNode[],

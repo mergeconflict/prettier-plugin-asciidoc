@@ -14,6 +14,7 @@
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
+import { unreachable } from "../../src/unreachable.js";
 
 describe("line comment parsing", () => {
   // Verifies the fundamental contract: `// text` becomes a comment node,
@@ -21,11 +22,12 @@ describe("line comment parsing", () => {
   test("// text parses as a line comment", () => {
     const document = parse("// this is a comment\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("line");
-      expect(document.children[0].value).toBe("this is a comment");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("line");
+    expect(child0.value).toBe("this is a comment");
   });
 
   // `//` alone is a valid empty comment in AsciiDoc. The lexer's negative
@@ -33,11 +35,12 @@ describe("line comment parsing", () => {
   test("// alone on a line is an empty comment", () => {
     const document = parse("//\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("line");
-      expect(document.children[0].value).toBe("");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("line");
+    expect(child0.value).toBe("");
   });
 
   // `//path` (no space after slashes) is valid text in AsciiDoc, not a
@@ -52,19 +55,21 @@ describe("line comment parsing", () => {
 
   // The `(?!\S)` lookahead accepts any whitespace after `//`, not
   // just space. A tab character is whitespace, so `//\t` followed
-  // by text is a valid line comment. Note that only a literal space
-  // is stripped from the value — a tab is preserved as part of the
-  // content. Guards against regressions where the lookahead is
+  // by text is a valid line comment. `buildLineComment` strips only
+  // a leading space from the raw image (`raw.startsWith(" ")`), so
+  // a tab-prefixed comment has the tab preserved in `value`. Guards
+  // against regressions where the lookahead is
   // tightened to require a literal space character.
   test("//[tab] (tab after slashes) is a valid line comment", () => {
     const tab = "\t";
     const document = parse(`//${tab}indented remark\n`);
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("line");
-      expect(document.children[0].value).toBe(`${tab}indented remark`);
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("line");
+    expect(child0.value).toBe(`${tab}indented remark`);
   });
 
   // Authors often stack line comments. Each must be its own AST node so
@@ -73,14 +78,13 @@ describe("line comment parsing", () => {
   test("consecutive line comments are separate nodes", () => {
     const document = parse("// first\n// second\n");
     expect(document.children).toHaveLength(2);
-    expect(document.children[0].type).toBe("comment");
-    expect(document.children[1].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].value).toBe("first");
-    }
-    if (document.children[1].type === "comment") {
-      expect(document.children[1].value).toBe("second");
-    }
+    const {
+      children: [child0, child1],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    if (child1.type !== "comment") unreachable("expected comment");
+    expect(child0.value).toBe("first");
+    expect(child1.value).toBe("second");
   });
 
   // Prettier uses locStart/locEnd for cursor tracking and range
@@ -113,26 +117,30 @@ describe("line comment parsing", () => {
   test("comment inside a section", () => {
     const document = parse("== Title\n\n// remark\n\nText.\n");
     expect(document.children).toHaveLength(1);
-    if (document.children[0].type === "section") {
-      expect(document.children[0].children).toHaveLength(2);
-      expect(document.children[0].children[0].type).toBe("comment");
-      expect(document.children[0].children[1].type).toBe("paragraph");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "section") unreachable("expected section");
+    expect(child0.children).toHaveLength(2);
+    expect(child0.children[0].type).toBe("comment");
+    expect(child0.children[1].type).toBe("paragraph");
   });
 });
 
 describe("block comment parsing", () => {
   // The core block comment contract: `////` delimiters wrap verbatim
-  // content that must not be parsed as AsciiDoc. If the lexer mode
-  // switch fails, the content would be tokenized as paragraphs.
+  // content that must not be parsed as AsciiDoc. If the `push_mode`
+  // on BlockCommentDelimiter fails, the content falls through to
+  // default-mode tokenization (headings, inline text, etc.).
   test("block comment with content", () => {
     const document = parse("////\nblock content\n////\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("block");
-      expect(document.children[0].value).toBe("block content");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("block");
+    expect(child0.value).toBe("block content");
   });
 
   // Empty block comments (`////\n////`) are valid and must not confuse
@@ -141,24 +149,27 @@ describe("block comment parsing", () => {
   test("empty block comment", () => {
     const document = parse("////\n////\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("block");
-      expect(document.children[0].value).toBe("");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("block");
+    expect(child0.value).toBe("");
   });
 
   // Multi-line content must be preserved with its internal newlines
-  // intact. The AST builder joins BlockCommentContent tokens with
-  // newlines — verify that reconstructed value matches the original.
+  // intact. `extractBlockCommentContent` slices raw source text between
+  // the open and close delimiter byte offsets — internal newlines are
+  // preserved automatically because no token reassembly is involved.
   test("block comment with multiple lines", () => {
     const document = parse("////\nline one\nline two\nline three\n////\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("block");
-      expect(document.children[0].value).toBe("line one\nline two\nline three");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("block");
+    expect(child0.value).toBe("line one\nline two\nline three");
   });
 
   // Block comments can contain blank lines (e.g. separating paragraphs
@@ -168,11 +179,12 @@ describe("block comment parsing", () => {
   test("block comment preserves internal blank lines", () => {
     const document = parse("////\nline one\n\nline three\n////\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("block");
-      expect(document.children[0].value).toBe("line one\n\nline three");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("block");
+    expect(child0.value).toBe("line one\n\nline three");
   });
 
   // Same structural test as for line comments: block comments between
@@ -202,11 +214,12 @@ describe("block comment parsing", () => {
   test("block comment with extended delimiter (5+ slashes)", () => {
     const document = parse("//////\ncontent\n//////\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("block");
-      expect(document.children[0].value).toBe("content");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("block");
+    expect(child0.value).toBe("content");
   });
 
   // A block comment at the very end of the file may have no trailing
@@ -216,11 +229,12 @@ describe("block comment parsing", () => {
   test("block comment at EOF without trailing newline", () => {
     const document = parse("////\ncontent\n////");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("block");
-      expect(document.children[0].value).toBe("content");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("block");
+    expect(child0.value).toBe("content");
   });
 
   // AsciiDoc allows mismatched delimiter lengths: a 4-slash open
@@ -230,10 +244,11 @@ describe("block comment parsing", () => {
   test("mismatched delimiter lengths (4-open, 6-close)", () => {
     const document = parse("////\ncontent\n//////\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("comment");
-    if (document.children[0].type === "comment") {
-      expect(document.children[0].commentType).toBe("block");
-      expect(document.children[0].value).toBe("content");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "comment") unreachable("expected comment");
+    expect(child0.commentType).toBe("block");
+    expect(child0.value).toBe("content");
   });
 });

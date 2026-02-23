@@ -13,6 +13,7 @@ import type {
   CommentNode,
   DelimitedBlockNode,
   ParentBlockNode,
+  TextNode,
 } from "../ast.js";
 import {
   EMPTY,
@@ -44,17 +45,20 @@ const CHECKBOX_PREFIX_LEN = 4;
  * start of item text. Returns the checkbox state and the text
  * with the prefix stripped, or undefined/original text if no
  * checkbox is present.
+ * @param rawValue - The raw text content of a list item,
+ *   possibly starting with a checkbox marker.
+ * @returns The checkbox state ("checked", "unchecked", or
+ *   undefined if absent) and the byte length of the prefix
+ *   to strip from the value before building inline children.
  */
 export function parseCheckbox(rawValue: string): {
   checkbox: "checked" | "unchecked" | undefined;
-  value: string;
   prefixLength: number;
 } {
   const match = CHECKBOX_RE.exec(rawValue);
   if (match?.groups === undefined) {
     return {
       checkbox: undefined,
-      value: rawValue,
       prefixLength: EMPTY,
     };
   }
@@ -63,7 +67,6 @@ export function parseCheckbox(rawValue: string): {
   } = match;
   return {
     checkbox: mark === " " ? "unchecked" : "checked",
-    value: rawValue.slice(CHECKBOX_PREFIX_LEN),
     prefixLength: CHECKBOX_PREFIX_LEN,
   };
 }
@@ -71,9 +74,20 @@ export function parseCheckbox(rawValue: string): {
 /**
  * Builds a DelimitedBlockNode from open/close tokens by
  * extracting content verbatim from the source text. Same
- * substring extraction strategy as blockComment — token-based
+ * substring extraction strategy as blockComment -- token-based
  * reconstruction would lose blank lines because the CST
  * groups tokens by type, not position.
+ * @param openTokens - The opening delimiter tokens from the
+ *   CST. The first element is always present since the grammar
+ *   requires it to enter the rule.
+ * @param closeTokens - The closing delimiter tokens, or
+ *   undefined when the block is unclosed (EOF before match).
+ * @param variant - The block variant (listing, literal, pass,
+ *   etc.) that determines how the printer formats content.
+ * @param sourceText - The full source text, used for verbatim
+ *   substring extraction between delimiters.
+ * @returns A complete DelimitedBlockNode with content sliced
+ *   directly from the source text.
  */
 export function buildDelimitedBlock(
   openTokens: IToken[] | undefined,
@@ -112,8 +126,10 @@ export function buildDelimitedBlock(
     };
   }
 
-  // Normal case: content ends before the newline + close
-  // delimiter.
+  // Normal case: content ends before the newline that precedes
+  // the close delimiter. closeToken.startOffset - 1 lands on the
+  // newline character itself; slicing up to (not including) that
+  // position gives us the content without a trailing newline.
   const contentEnd = closeToken.startOffset - NEWLINE_LENGTH;
   const content =
     contentStart <= contentEnd
@@ -135,6 +151,17 @@ export function buildDelimitedBlock(
 /**
  * Builds a ParentBlockNode from open/close delimiter tokens
  * and recursively visited child block nodes.
+ * @param openTokens - The opening delimiter tokens from the
+ *   CST. Always present since the grammar requires it.
+ * @param closeTokens - The closing delimiter tokens, or
+ *   undefined when the block is unclosed (EOF before match).
+ * @param variant - The parent block variant (example,
+ *   sidebar, open, quote) that controls nesting semantics.
+ * @param children - Recursively visited child BlockNodes
+ *   contained within the delimiters.
+ * @returns A ParentBlockNode whose position spans from the
+ *   open delimiter to the close delimiter (or open token end
+ *   as fallback for unclosed blocks).
  */
 export function buildParentBlock(
   openTokens: IToken[] | undefined,
@@ -170,7 +197,16 @@ export function buildParentBlock(
 
 /**
  * Extracts verbatim content between comment delimiters from
- * the source text. Same approach as buildDelimitedBlock.
+ * the source text. Substring extraction is used instead of
+ * joining token images because the CST groups tokens by type
+ * (e.g. all Newline tokens together), which would lose blank
+ * lines that appear inside the comment block.
+ * @param delimiterToken - The opening `////` delimiter token.
+ * @param endToken - The closing `////` delimiter token.
+ * @param sourceText - The full source text from which content
+ *   is sliced (between the delimiter boundaries).
+ * @returns The raw string between the delimiters, or an empty
+ *   string when the delimiters are adjacent (no content).
  */
 export function extractBlockCommentContent(
   delimiterToken: IToken,
@@ -189,6 +225,13 @@ export function extractBlockCommentContent(
  * Merges inline text and IndentedLine tokens into a single
  * array sorted by source position. This preserves the original
  * line order when both token types appear in a list item.
+ * @param textTokens - Inline text tokens (plain paragraph
+ *   lines) from the list item CST.
+ * @param indentedTokens - IndentedLine tokens (continuation
+ *   lines with leading whitespace) from the list item CST.
+ * @returns A single token array in source order. Returns
+ *   `textTokens` directly when there are no indented tokens,
+ *   avoiding an unnecessary copy.
  */
 export function mergeTextTokens(
   textTokens: IToken[],
@@ -203,43 +246,13 @@ export function mergeTextTokens(
 }
 
 /**
- * Builds the common parts of a FlatListItem from text tokens
- * and a marker token. Shared by orderedListItem and
- * calloutListItem which have identical text-assembly logic.
+ * Finds the first list-type CST subrule in the block context.
+ * Separated from findSubrule to keep cyclomatic complexity
+ * under the limit -- each nullish-coalescing branch counts.
+ * @param context - The block CST children to search through.
+ * @returns The first list subrule node (unordered, ordered, or
+ *   callout), or undefined if no list rule matched.
  */
-export function buildBaseFlatItem(
-  markerToken: IToken,
-  textTokens: IToken[],
-  depth: number,
-  options: {
-    calloutNumber?: number;
-    indentedTokens?: IToken[];
-  } = {},
-): FlatListItem {
-  // Merge inline text and IndentedLine tokens in source order.
-  // IndentedLine images have leading whitespace that must be
-  // stripped so the AST value contains clean text.
-  const allTokens = mergeTextTokens(textTokens, options.indentedTokens ?? []);
-  const value = allTokens.map((t) => t.image.trimStart()).join("\n");
-  const lastToken = allTokens.at(LAST_ELEMENT) ?? markerToken;
-  return {
-    depth,
-    value,
-    checkbox: undefined,
-    calloutNumber: options.calloutNumber,
-    start: tokenStartLocation(markerToken),
-    end: tokenEndLocation(lastToken),
-    textStart:
-      allTokens.length > EMPTY
-        ? tokenStartLocation(allTokens[FIRST])
-        : tokenStartLocation(markerToken),
-    textEnd: tokenEndLocation(lastToken),
-  };
-}
-
-// Finds the first list-type CST subrule in the block context.
-// Separated from findSubrule to keep cyclomatic complexity
-// under the limit — each nullish-coalescing branch counts.
 function findListSubrule(context: BlockCstChildren): CstNode | undefined {
   return (
     context.unorderedList?.[FIRST] ??
@@ -248,8 +261,13 @@ function findListSubrule(context: BlockCstChildren): CstNode | undefined {
   );
 }
 
-// Checks for any delimited leaf block subrule type (listing,
-// literal, passthrough, fenced code) in the block CST.
+/**
+ * Checks for any delimited leaf block subrule type (listing,
+ * literal, passthrough, fenced code) in the block CST.
+ * @param context - The block CST children to search through.
+ * @returns The first leaf block subrule node, or undefined if
+ *   no leaf block delimiter was matched.
+ */
 function findLeafBlockSubrule(context: BlockCstChildren): CstNode | undefined {
   return (
     context.listingBlock?.[FIRST] ??
@@ -259,8 +277,13 @@ function findLeafBlockSubrule(context: BlockCstChildren): CstNode | undefined {
   );
 }
 
-// Checks for any parent block subrule type (example, sidebar,
-// open, quote) in the block CST.
+/**
+ * Checks for any parent block subrule type (example, sidebar,
+ * open, quote) in the block CST.
+ * @param context - The block CST children to search through.
+ * @returns The first parent block subrule node, or undefined
+ *   if no parent block delimiter was matched.
+ */
 function findParentBlockSubrule(
   context: BlockCstChildren,
 ): CstNode | undefined {
@@ -272,25 +295,33 @@ function findParentBlockSubrule(
   );
 }
 
-// Checks for any delimited block subrule — either leaf blocks
-// (verbatim content) or parent blocks (recursive content).
-// Combines both helpers into one to keep findSubrule within
-// the cyclomatic complexity limit.
+/**
+ * Checks for any delimited block subrule -- either leaf blocks
+ * (verbatim content) or parent blocks (recursive content).
+ * Combines both helpers to keep findSubrule within the
+ * cyclomatic complexity limit.
+ * @param context - The block CST children to search through.
+ * @returns The first delimited block subrule node (leaf or
+ *   parent), or undefined if none was matched.
+ */
 function findDelimitedBlockSubrule(
   context: BlockCstChildren,
 ): CstNode | undefined {
   return findLeafBlockSubrule(context) ?? findParentBlockSubrule(context);
 }
 
-// Finds the first CST subrule node present in the block
-// context. Extracted to keep the block() visitor under the
-// complexity limit — each nullish-coalescing branch counts
-// toward cyclomatic complexity.
-// Groups the paragraph-like rules: literal paragraphs,
-// admonition paragraphs, and regular paragraphs. Order matters —
-// literal and admonition paragraphs take priority because they
-// have stricter token requirements (IndentedLine or
-// AdmonitionMarker) that distinguish them from plain paragraphs.
+/**
+ * Groups the paragraph-like rules: literal paragraphs,
+ * admonition paragraphs, and regular paragraphs. Order
+ * matters -- literal and admonition paragraphs take priority
+ * because they have stricter token requirements (IndentedLine
+ * or AdmonitionMarker) that distinguish them from plain
+ * paragraphs. Extracted to keep the block() visitor under
+ * the cyclomatic complexity limit.
+ * @param context - The block CST children to search through.
+ * @returns The first paragraph-like subrule node, or undefined
+ *   if no paragraph rule was matched.
+ */
 function findParagraphSubrule(context: BlockCstChildren): CstNode | undefined {
   return (
     context.literalParagraph?.[FIRST] ??
@@ -303,6 +334,13 @@ function findParagraphSubrule(context: BlockCstChildren): CstNode | undefined {
  * Finds the first CST subrule node present in the block
  * context. Returns `undefined` if recovery produced an empty
  * block CST node.
+ * @param context - The block-level CST children. Each
+ *   property corresponds to an alternative in the block
+ *   grammar rule.
+ * @returns The first matched subrule node, checked in
+ *   priority order: comments, attribute entries, lists,
+ *   delimited blocks, then paragraphs. Returns undefined
+ *   when error recovery produced an empty block.
  */
 export function findSubrule(context: BlockCstChildren): CstNode | undefined {
   return (
@@ -314,46 +352,67 @@ export function findSubrule(context: BlockCstChildren): CstNode | undefined {
   );
 }
 
+/** Nesting depth assigned to recovered list items (always 1). */
+const RECOVERY_DEPTH = 1;
 /**
  * Fallback for list item visitor methods when recovery enters
  * the rule without a marker token. Builds a depth-1 stub from
  * whatever text tokens are available.
+ * @param textTokens - Whatever inline text tokens Chevrotain's
+ *   error recovery collected. May be empty if recovery
+ *   captured nothing.
+ * @returns A FlatListItem stub at depth 1 with position
+ *   information derived from the available tokens, or a
+ *   zero-offset fallback when no tokens are present.
  */
-const RECOVERY_DEPTH = 1;
 export function buildRecoveredListItem(textTokens: IToken[]): FlatListItem {
-  const value = textTokens.map((t) => t.image).join("\n");
   const fallback = makeLocation(FIRST, FIRST_LINE, FIRST_COLUMN);
   if (textTokens.length === EMPTY) {
     return {
       depth: RECOVERY_DEPTH,
-      value,
+      inlineChildren: [],
       checkbox: undefined,
       calloutNumber: undefined,
       start: fallback,
       end: fallback,
-      textStart: fallback,
-      textEnd: fallback,
     };
   }
   const start = tokenStartLocation(textTokens[FIRST]);
   const end = tokenEndLocation(
     textTokens.at(LAST_ELEMENT) ?? textTokens[FIRST],
   );
+  // Combine all recovered tokens into a single TextNode rather than
+  // re-running the inline parser. Recovery tokens may be partial or
+  // out of order, and attempting inline parsing on them could crash
+  // or produce nonsense nodes. A single verbatim TextNode is the
+  // safest fallback.
+  const value = textTokens.map((t) => t.image).join("\n");
+  const textNode: TextNode = {
+    type: "text",
+    value,
+    position: { start, end },
+  };
   return {
     depth: RECOVERY_DEPTH,
-    value,
+    inlineChildren: [textNode],
     checkbox: undefined,
     calloutNumber: undefined,
     start,
     end,
-    textStart: start,
-    textEnd: end,
   };
 }
 
 /**
  * Determines whether an attribute entry uses `!` prefix or
- * suffix unset syntax, or is a normal set.
+ * suffix unset syntax, or is a normal set. AsciiDoc supports
+ * both `:!name:` (prefix) and `:name!:` (suffix) forms to
+ * undefine an attribute.
+ * @param prefix - The character before the attribute name
+ *   (empty string or "!").
+ * @param suffix - The character after the attribute name
+ *   (empty string or "!").
+ * @returns `"prefix"` or `"suffix"` indicating the unset
+ *   form, or `false` if the attribute is being set normally.
  */
 export function parseUnsetForm(
   prefix: string,
@@ -366,8 +425,16 @@ export function parseUnsetForm(
 
 /**
  * Builds a CommentNode from a block comment's CST tokens.
- * Handles unclosed block comments gracefully — when the end
+ * Handles unclosed block comments gracefully -- when the end
  * delimiter is missing, content extends to EOF.
+ * @param delimiterToken - The opening `////` delimiter token.
+ * @param endToken - The closing `////` delimiter token, or
+ *   undefined when the comment block is unclosed (EOF before
+ *   the matching close delimiter).
+ * @param sourceText - The full source text, used for verbatim
+ *   content extraction between delimiters.
+ * @returns A CommentNode with block type whose value contains
+ *   the raw content between (or after) the delimiters.
  */
 export function buildBlockComment(
   delimiterToken: IToken,
@@ -416,6 +483,15 @@ const COLON_SPACE_LEN = 2;
 /**
  * Builds an AdmonitionNode from a paragraph-form admonition.
  * Handles recovery gracefully when the marker token is missing.
+ * @param markerToken - The admonition label token (e.g.
+ *   "NOTE: ", "WARNING: "), or undefined when Chevrotain's
+ *   error recovery entered the rule without matching a marker.
+ * @param textTokens - Inline text tokens forming the
+ *   admonition body content. May be empty.
+ * @returns An AdmonitionNode in paragraph form with variant
+ *   derived from the marker label (lowercased, colon-space
+ *   suffix stripped). Falls back to "note" when the marker
+ *   is missing.
  */
 export function buildAdmonitionParagraph(
   markerToken: IToken | undefined,
@@ -468,6 +544,12 @@ export function buildAdmonitionParagraph(
 /**
  * Builds a stub AttributeEntryNode when recovery enters the
  * rule without the expected tokens.
+ * @param token - The single token Chevrotain's error recovery
+ *   managed to capture (typically the attribute name), or
+ *   undefined if recovery captured nothing at all.
+ * @returns A minimal AttributeEntryNode with the token's image
+ *   as the name (or empty string), no value, and position
+ *   derived from the token or a zero-offset fallback.
  */
 export function buildRecoveredAttributeEntry(
   token: IToken | undefined,

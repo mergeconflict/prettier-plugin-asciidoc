@@ -138,7 +138,7 @@ describe("admonition formatting in context", () => {
     expect(await formatAdoc(input)).toBe(input);
   });
 
-  test("anchor + block-form admonition stacks", async () => {
+  test("anchor + block-form admonition", async () => {
     const input = "[[my-note]]\n[TIP]\n====\nContent.\n====\n";
     expect(await formatAdoc(input)).toBe(input);
   });
@@ -149,10 +149,12 @@ describe("admonition formatting in context", () => {
     expect(await formatAdoc(input)).toBe(input);
   });
 
-  // Anchor stacks with paragraph-form admonition.
+  // Anchor paragraph gets blank-line separation from
+  // paragraph-form admonition.
   test("anchor + paragraph-form admonition", async () => {
     const input = "[[my-note]]\nNOTE: This is a note.\n";
-    expect(await formatAdoc(input)).toBe(input);
+    const expected = "[[my-note]]\n\nNOTE: This is a note.\n";
+    expect(await formatAdoc(input)).toBe(expected);
   });
 
   // Custom admonition type round-trips.

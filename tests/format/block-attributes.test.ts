@@ -3,7 +3,7 @@
  *
  * The formatter preserves block metadata lines as-is:
  * - `[source,ruby]` — block attribute list
- * - `[[anchor-id]]` — block anchor
+ * - `[[anchor-id]]` — anchor (paragraph with inlineAnchor)
  * - `.Block Title` — block title
  *
  * Block metadata lines stack with the following block (no blank
@@ -62,16 +62,24 @@ describe("block attribute list formatting", () => {
   });
 });
 
-describe("block anchor formatting", () => {
+describe("standalone anchor formatting", () => {
   // Idempotency: anchor passes through unchanged.
-  test("block anchor preserved as-is", async () => {
+  test("standalone anchor preserved as-is", async () => {
     const input = "[[anchor-id]]\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
-  // Anchor stacks with following block.
-  test("anchor stacks with paragraph", async () => {
+  // Anchor on same line as text (no blank line separator)
+  // forms a single paragraph — reflow merges them.
+  test("anchor before text without blank line merges", async () => {
     const input = "[[my-anchor]]\nSome text.\n";
+    expect(await formatAdoc(input)).toBe("[[my-anchor]] Some text.\n");
+  });
+
+  // Anchor followed by a blank line stays separate — the blank
+  // line is preserved since anchors are regular paragraphs.
+  test("anchor preserves blank line before next block", async () => {
+    const input = "[[my-anchor]]\n\nSome text.\n";
     expect(await formatAdoc(input)).toBe(input);
   });
 
@@ -111,9 +119,10 @@ describe("block title formatting", () => {
 });
 
 describe("combined block metadata formatting", () => {
-  // All three types stacked: they should appear on consecutive
-  // lines with no blank lines between any of them.
-  test("anchor + title + attribute list + block stacks", async () => {
+  // Anchor paragraph is block metadata — it stacks with the
+  // following title and attribute list. The entire metadata chain
+  // stacks with the block.
+  test("anchor + title + attribute list + block", async () => {
     const input =
       "[[my-id]]\n.My Title\n[source,ruby]\n----\nputs 'hello'\n----\n";
     expect(await formatAdoc(input)).toBe(input);

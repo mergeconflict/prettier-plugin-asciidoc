@@ -27,14 +27,18 @@ import type {
   BlockNode,
   ListNode,
 } from "../ast.js";
+import type { CstNode, IToken } from "chevrotain";
 import { asciidocParser } from "./grammar.js";
-import { nestListItems, type FlatListItem } from "./list-builder.js";
+import {
+  nestListItems,
+  buildListItemInlineChildren,
+  trimCheckboxPrefix,
+  type FlatListItem,
+} from "./list-builder.js";
 import {
   parseCheckbox,
   buildDelimitedBlock,
   buildParentBlock,
-  buildBaseFlatItem,
-  mergeTextTokens,
   findSubrule,
   buildRecoveredListItem,
   buildBlockComment,
@@ -45,12 +49,12 @@ import {
 import { nestSections } from "./section-builder.js";
 import { convertParagraphFormBlocks } from "./paragraph-form.js";
 import { convertDiscreteHeadings } from "./discrete-heading.js";
+import { buildInlineNodesFromLines } from "./inline-node-builder.js";
 import {
-  buildInlineNodesFromLines,
   flattenInlineTokens,
   inlineLinesToTextTokens,
   unwrapInlineLines,
-} from "./inline-builder.js";
+} from "./inline-tokens.js";
 import {
   EMPTY,
   FIRST,
@@ -116,6 +120,26 @@ const BaseCstVisitor = asciidocParser.getBaseCstVisitorConstructorWithDefaults<
   unknown
 >();
 
+/** Options for {@link AstBuilder.visitParentBlock}. */
+interface VisitParentBlockOptions {
+  /** CST sub-rule nodes to visit as child blocks. */
+  blocks: CstNode[] | undefined;
+  /** Opening delimiter tokens (e.g. `====`). */
+  openTokens: IToken[] | undefined;
+  /**
+   * Closing delimiter tokens. May be `undefined` for
+   * unclosed blocks (graceful degradation).
+   */
+  closeTokens: IToken[] | undefined;
+  /** Block variant for the AST (example, sidebar, etc.). */
+  variant: ParentBlockNode["variant"];
+  /**
+   * Full document source text, forwarded to child visitors
+   * for position computation.
+   */
+  sourceText: string;
+}
+
 /**
  * Stateless: a single instance is reused across parse calls.
  * validateVisitor() catches mismatches between grammar rules
@@ -136,6 +160,13 @@ export class AstBuilder extends BaseCstVisitor {
    * complex — and we'd need lookahead to know when a section
    * ends. The linear scan with a stack is simpler and matches
    * how AsciiDoc sections actually nest.
+   * @param context - CST children produced by the `document`
+   *   grammar rule, containing flat block sub-nodes.
+   * @param sourceText - Full source for computing the
+   *   document's end position (needed because the last token
+   *   may not reach EOF).
+   * @returns Root document node with sections nested by depth
+   *   and paragraph-form / discrete-heading transforms applied.
    */
   document(context: DocumentCstChildren, sourceText: string): DocumentNode {
     const flatBlocks: BlockNode[] = [];
@@ -174,6 +205,15 @@ export class AstBuilder extends BaseCstVisitor {
    * Sections and line comments are single-token rules that
    * can be built directly from the token. Other block types
    * are subrules delegated to their visitor methods.
+   * @param context - CST children for a single block rule
+   *   invocation — may contain a token (section heading,
+   *   line comment, break) or a subrule (paragraph, list,
+   *   delimited block, etc.).
+   * @param sourceText - Full source, passed through to
+   *   subrule visitors and used for recovery fallback
+   *   position.
+   * @returns The appropriate AST block node, or a zero-width
+   *   paragraph if recovery produced an empty CST node.
    */
   block(context: BlockCstChildren, sourceText: string): BlockNode {
     // Try single-token block types first.
@@ -202,8 +242,16 @@ export class AstBuilder extends BaseCstVisitor {
     return this.visit(subrule, sourceText) as BlockNode;
   }
 
-  // Builds inline nodes from CST inline tokens and computes
-  // position from first meaningful token to last.
+  /**
+   * Converts a paragraph's CST inline lines into AST
+   * inline nodes. Computes the paragraph's position from
+   * the first to the last content token, deliberately
+   * excluding trailing newlines (structural separators).
+   * @param context - CST children containing inline
+   *   lines and newlines from the paragraph rule.
+   * @returns A paragraph node with inline children and
+   *   content-based position.
+   */
   paragraph(context: ParagraphCstChildren): ParagraphNode {
     const inlineLines = context.inlineLine ?? [];
     const inlineNewlines = context.InlineNewline ?? [];
@@ -233,7 +281,14 @@ export class AstBuilder extends BaseCstVisitor {
     };
   }
 
-  // Collects flat list items and nests them by marker depth.
+  /**
+   * Visits each unordered list item CST to produce a flat
+   * item array, then delegates to `nestListItems` to
+   * build the nested tree based on marker depth.
+   * @param context - CST children containing the list
+   *   item sub-rules from the unorderedList grammar rule.
+   * @returns A root ListNode with nested children.
+   */
   unorderedList(context: UnorderedListCstChildren): ListNode {
     const itemCsts = context.listItem ?? [];
     // Collect flat items with their depth and AST data.
@@ -245,66 +300,68 @@ export class AstBuilder extends BaseCstVisitor {
     return nestListItems(flatItems);
   }
 
-  /** Extracts a flat list item (depth, text, checkbox, position). */
+  /**
+   * Extracts a flat list item with depth, inline children,
+   * checkbox state, and position. "Flat" because nesting
+   * happens later in nestListItems — here we just read
+   * the marker depth and parse the content line.
+   * @param context - CST children for a single unordered
+   *   list item: the marker token (e.g. "* ") and inline
+   *   content tokens.
+   * @returns Flat item with nesting depth derived from
+   *   marker length, checkbox state if present, and
+   *   inline AST children for the item text.
+   */
   listItem(context: ListItemCstChildren): FlatListItem {
     const markerToken = context.UnorderedListMarker?.[FIRST];
-    const textTokens = inlineLinesToTextTokens(
-      context.inlineLine ?? [],
-      context.InlineNewline ?? [],
-    );
-
     if (markerToken === undefined) {
-      // Recovery entered the rule without a marker token.
-      // Build a stub item from whatever text is available.
-      return buildRecoveredListItem(textTokens);
+      return buildRecoveredListItem(
+        inlineLinesToTextTokens(
+          context.inlineLine ?? [],
+          context.InlineNewline ?? [],
+        ),
+      );
     }
 
-    // The marker image is `*{1,5} ` or `- `. For `*`-style markers,
-    // depth = number of asterisks. For `-`, depth is always 1. Both
-    // cases reduce to image length minus the trailing space.
     const depth = markerToken.image.length - TRAILING_SPACE_LEN;
 
-    // Merge inline text and IndentedLine tokens in source order.
-    // IndentedLine images have leading whitespace that must be
-    // stripped so the AST value contains clean text.
-    const allTokens = mergeTextTokens(textTokens, context.IndentedLine ?? []);
-    const rawValue = allTokens.map((t) => t.image.trimStart()).join("\n");
+    const { inlineChildren, lastToken } = buildListItemInlineChildren(
+      context,
+      markerToken,
+    );
 
-    // Detect checklist markers: [x], [*], or [ ] followed by a
-    // space at the start of the item text.
-    const { checkbox, value, prefixLength } = parseCheckbox(rawValue);
+    // Checkbox detection only inspects the first few characters,
+    // so we just look at the first TextNode's value rather than
+    // re-scanning all tokens.
+    const [firstChild] = inlineChildren;
+    const rawValue =
+      inlineChildren.length > EMPTY && firstChild.type === "text"
+        ? firstChild.value
+        : "";
+    const { checkbox, prefixLength } = parseCheckbox(rawValue);
 
-    const lastToken = allTokens.at(LAST_ELEMENT) ?? markerToken;
-
-    // When a checkbox prefix is present, shift textStart forward
-    // by the prefix length so the position tracks the actual
-    // content text, not the checkbox marker.
-    const baseTextStart =
-      allTokens.length > EMPTY
-        ? tokenStartLocation(allTokens[FIRST])
-        : tokenStartLocation(markerToken);
-    const textStart =
-      prefixLength > EMPTY
-        ? makeLocation(
-            baseTextStart.offset + prefixLength,
-            baseTextStart.line,
-            baseTextStart.column + prefixLength,
-          )
-        : baseTextStart;
+    if (prefixLength > EMPTY) {
+      trimCheckboxPrefix(inlineChildren, prefixLength);
+    }
 
     return {
       depth,
-      value,
+      inlineChildren,
       checkbox,
       calloutNumber: undefined,
       start: tokenStartLocation(markerToken),
       end: tokenEndLocation(lastToken),
-      textStart,
-      textEnd: tokenEndLocation(lastToken),
     };
   }
 
-  // Nests flat ordered list items by marker depth.
+  /**
+   * Visits each ordered list item CST to produce a flat
+   * item array, then nests them by dot-marker depth
+   * (e.g. `.` = depth 1, `..` = depth 2).
+   * @param context - CST children containing the ordered
+   *   list item sub-rules.
+   * @returns A root ListNode with variant `"ordered"`.
+   */
   orderedList(context: OrderedListCstChildren): ListNode {
     const itemCsts = context.orderedListItem ?? [];
     const flatItems = itemCsts.map(
@@ -315,11 +372,20 @@ export class AstBuilder extends BaseCstVisitor {
     return nestListItems(flatItems, "ordered");
   }
 
-  /** Extracts flat ordered list item (depth, text, position). */
+  /**
+   * Extracts a flat ordered list item with depth, inline
+   * children, and position. Ordered markers use dots
+   * (e.g. ". ", ".. ") — depth is marker length minus
+   * trailing space, same as unordered.
+   * @param context - CST children for a single ordered
+   *   list item: the marker token and inline content.
+   * @returns Flat item with depth from marker length and
+   *   inline AST children. No checkbox support — ordered
+   *   lists don't use checklists.
+   */
   orderedListItem(context: OrderedListItemCstChildren): FlatListItem {
     const markerToken = context.OrderedListMarker?.[FIRST];
     if (markerToken === undefined) {
-      // Recovery entered the rule without a marker token.
       return buildRecoveredListItem(
         inlineLinesToTextTokens(
           context.inlineLine ?? [],
@@ -328,23 +394,32 @@ export class AstBuilder extends BaseCstVisitor {
       );
     }
 
-    // The marker image is `.{1,5} ` — depth is the number of
-    // dots (image length minus the trailing space).
     const depth = markerToken.image.length - TRAILING_SPACE_LEN;
-    return buildBaseFlatItem(
+    const { inlineChildren, lastToken } = buildListItemInlineChildren(
+      context,
       markerToken,
-      inlineLinesToTextTokens(
-        context.inlineLine ?? [],
-        context.InlineNewline ?? [],
-      ),
-      depth,
-      {
-        indentedTokens: context.IndentedLine ?? [],
-      },
     );
+
+    return {
+      depth,
+      inlineChildren,
+      checkbox: undefined,
+      calloutNumber: undefined,
+      start: tokenStartLocation(markerToken),
+      end: tokenEndLocation(lastToken),
+    };
   }
 
-  // Builds a flat callout list (callouts don't nest).
+  /**
+   * Builds a callout list from its item CSTs. Unlike
+   * unordered and ordered lists, callouts are always
+   * flat — they cannot nest. The resulting tree is
+   * still passed through `nestListItems` for uniform
+   * structure, but depth is always 1.
+   * @param context - CST children containing the
+   *   callout list item sub-rules.
+   * @returns A root ListNode with variant `"callout"`.
+   */
   calloutList(context: CalloutListCstChildren): ListNode {
     const itemCsts = context.calloutListItem ?? [];
     const flatItems = itemCsts.map(
@@ -355,17 +430,26 @@ export class AstBuilder extends BaseCstVisitor {
     return nestListItems(flatItems, "callout");
   }
 
-  /** Extracts flat callout item (callout number, text, position). */
+  /**
+   * Extracts a flat callout list item. Callout markers use
+   * angle brackets (e.g. "<1> ", "<.> "). Unlike unordered
+   * and ordered lists, callouts are always flat — depth is
+   * fixed at 1 and the meaningful data is the callout
+   * number (or 0 for auto-numbering with "<.>").
+   * @param context - CST children for a single callout
+   *   item: the marker token and inline content.
+   * @returns Flat item with the parsed callout number,
+   *   fixed depth, and inline AST children.
+   */
   calloutListItem(context: CalloutListItemCstChildren): FlatListItem {
     const markerToken = context.CalloutListMarker?.[FIRST];
-    const textTokens = inlineLinesToTextTokens(
-      context.inlineLine ?? [],
-      context.InlineNewline ?? [],
-    );
-
     if (markerToken === undefined) {
-      // Recovery entered the rule without a marker token.
-      return buildRecoveredListItem(textTokens);
+      return buildRecoveredListItem(
+        inlineLinesToTextTokens(
+          context.inlineLine ?? [],
+          context.InlineNewline ?? [],
+        ),
+      );
     }
 
     // Extract callout number: "<1> " → 1, "<.> " → 0 (auto).
@@ -373,13 +457,35 @@ export class AstBuilder extends BaseCstVisitor {
     const inner = innerMatch?.groups?.inner ?? ".";
     const calloutNumber = inner === "." ? EMPTY : Number.parseInt(inner, 10);
 
-    return buildBaseFlatItem(markerToken, textTokens, CALLOUT_DEPTH, {
+    const { inlineChildren, lastToken } = buildListItemInlineChildren(
+      context,
+      markerToken,
+    );
+
+    return {
+      depth: CALLOUT_DEPTH,
+      inlineChildren,
+      checkbox: undefined,
       calloutNumber,
-      indentedTokens: context.IndentedLine ?? [],
-    });
+      start: tokenStartLocation(markerToken),
+      end: tokenEndLocation(lastToken),
+    };
   }
 
-  /** Extracts verbatim content between block comment delimiters. */
+  /**
+   * Extracts verbatim content between block comment
+   * delimiters (`////`). Content is sliced from the source
+   * text rather than reconstructed from tokens, because the
+   * CST groups tokens by type and would lose blank lines.
+   * @param context - CST children containing the opening
+   *   delimiter and optional closing delimiter / end token.
+   * @param sourceText - Full source for substring extraction
+   *   of the comment body. Also used to compute end position
+   *   when the closing delimiter is missing (unclosed comment
+   *   extends to EOF).
+   * @returns Comment node with verbatim content between
+   *   the delimiters.
+   */
   blockComment(
     context: BlockCommentCstChildren,
     sourceText: string,
@@ -394,7 +500,17 @@ export class AstBuilder extends BaseCstVisitor {
     );
   }
 
-  /** Builds a listing block from its delimiters and source text. */
+  /**
+   * Builds a listing block (`----`) from its delimiter tokens.
+   * Content is extracted verbatim from the source text between
+   * the delimiters — not from CST tokens — to preserve blank
+   * lines and exact whitespace.
+   * @param context - CST children with the opening and
+   *   optional closing delimiter tokens.
+   * @param sourceText - Full source for verbatim content
+   *   extraction between delimiters.
+   * @returns Delimited block node with variant "listing".
+   */
   listingBlock(
     context: ListingBlockCstChildren,
     sourceText: string,
@@ -408,9 +524,41 @@ export class AstBuilder extends BaseCstVisitor {
   }
 
   /**
+   * Shared implementation for parent block visitors
+   * (example, sidebar, quote). These blocks all follow
+   * the same pattern: visit child block CSTs recursively,
+   * then wrap them in a ParentBlockNode with the given
+   * variant and delimiter positions.
+   * @param options - Block definition (see
+   *   {@link VisitParentBlockOptions}).
+   * @returns Parent block node with visited children.
+   */
+  private visitParentBlock(options: VisitParentBlockOptions): ParentBlockNode {
+    const children = (options.blocks ?? []).map(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Chevrotain visitor returns unknown
+      (cst) => this.visit(cst, options.sourceText) as BlockNode,
+    );
+    return buildParentBlock(
+      options.openTokens,
+      options.closeTokens,
+      options.variant,
+      children,
+    );
+  }
+
+  /**
    * Builds a listing block from a Markdown-style fenced code
-   * block. Extracts the optional language hint from the open
-   * fence token image (e.g. "rust" from `` ```rust ``).
+   * block (` ``` `). Extracts the optional language hint from
+   * the open fence token image (e.g. "rust" from ` ```rust `).
+   * Fenced code blocks are treated as listing blocks in the
+   * AST because AsciiDoc and Markdown fences serve the same
+   * purpose — the distinction is syntactic, not semantic.
+   * @param context - CST children with the opening and
+   *   optional closing fence tokens.
+   * @param sourceText - Full source for verbatim content
+   *   extraction between the fences.
+   * @returns Delimited block node with variant "listing" and
+   *   an optional `language` property parsed from the fence.
    */
   fencedCodeBlock(
     context: FencedCodeBlockCstChildren,
@@ -436,7 +584,19 @@ export class AstBuilder extends BaseCstVisitor {
     return node;
   }
 
-  /** Builds a literal block from its delimiters and source text. */
+  /**
+   * Builds a literal block (`....`) from its delimiter tokens.
+   * Content is extracted verbatim from the source text between
+   * the delimiters — not from CST tokens — to preserve blank
+   * lines and exact whitespace. Literal blocks preserve all
+   * whitespace and render in a monospace font without
+   * interpretation.
+   * @param context - CST children with the opening and
+   *   optional closing delimiter tokens.
+   * @param sourceText - Full source for verbatim content
+   *   extraction between delimiters.
+   * @returns Delimited block node with variant "literal".
+   */
   literalBlock(
     context: LiteralBlockCstChildren,
     sourceText: string,
@@ -449,6 +609,20 @@ export class AstBuilder extends BaseCstVisitor {
     );
   }
 
+  /**
+   * Builds a passthrough block (`++++`) from its delimiter
+   * tokens. Content is extracted verbatim from the source text
+   * between the delimiters — not from CST tokens — to preserve
+   * blank lines and exact whitespace. Passthrough content is
+   * sent to the output unprocessed — no substitutions or
+   * interpretation. This is the AsciiDoc escape hatch for
+   * raw HTML/XML.
+   * @param context - CST children with the opening and
+   *   optional closing delimiter tokens.
+   * @param sourceText - Full source for verbatim content
+   *   extraction between delimiters.
+   * @returns Delimited block node with variant "pass".
+   */
   passBlock(
     context: PassBlockCstChildren,
     sourceText: string,
@@ -462,93 +636,109 @@ export class AstBuilder extends BaseCstVisitor {
   }
 
   /**
-   * Builds an example block from delimiter tokens and
-   * recursively visited child blocks.
+   * Builds an example block (`====`). Delegates to
+   * `visitParentBlock` — example blocks contain nested
+   * block-level children, not verbatim text.
+   * @param context - CST children with delimiters and
+   *   nested block sub-rules.
+   * @param sourceText - Passed through to child visitors.
+   * @returns Parent block with variant `"example"`.
    */
   exampleBlock(
     context: ExampleBlockCstChildren,
     sourceText: string,
   ): ParentBlockNode {
-    const children = (context.block ?? []).map(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Chevrotain visitor returns unknown
-      (cst) => this.visit(cst, sourceText) as BlockNode,
-    );
-    return buildParentBlock(
-      context.ExampleBlockOpen,
-      context.ExampleBlockClose,
-      "example",
-      children,
-    );
+    return this.visitParentBlock({
+      blocks: context.block,
+      openTokens: context.ExampleBlockOpen,
+      closeTokens: context.ExampleBlockClose,
+      variant: "example",
+      sourceText,
+    });
   }
 
   /**
-   * Builds a sidebar block from delimiter tokens and
-   * recursively visited child blocks.
+   * Builds a sidebar block (`****`). Sidebars are
+   * supplemental content displayed outside the main
+   * flow, containing nested block-level children.
+   * @param context - CST children with delimiters and
+   *   nested block sub-rules.
+   * @param sourceText - Passed through to child visitors.
+   * @returns Parent block with variant `"sidebar"`.
    */
   sidebarBlock(
     context: SidebarBlockCstChildren,
     sourceText: string,
   ): ParentBlockNode {
-    const children = (context.block ?? []).map(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Chevrotain visitor returns unknown
-      (cst) => this.visit(cst, sourceText) as BlockNode,
-    );
-    return buildParentBlock(
-      context.SidebarBlockOpen,
-      context.SidebarBlockClose,
-      "sidebar",
-      children,
-    );
+    return this.visitParentBlock({
+      blocks: context.block,
+      openTokens: context.SidebarBlockOpen,
+      closeTokens: context.SidebarBlockClose,
+      variant: "sidebar",
+      sourceText,
+    });
   }
 
   /**
-   * Builds an open block from delimiter tokens and
-   * recursively visited child blocks.
+   * Builds an open block (`--`). Unlike other parent
+   * blocks, open blocks use a single token type for
+   * both open and close delimiters — the CST array has
+   * open at `[0]` and close at `[1]`, so we split
+   * before delegating to `visitParentBlock`.
+   * @param context - CST children with the combined
+   *   delimiter array and nested block sub-rules.
+   * @param sourceText - Passed through to child visitors.
+   * @returns Parent block with variant `"open"`.
    */
   openBlock(
     context: OpenBlockCstChildren,
     sourceText: string,
   ): ParentBlockNode {
-    const children = (context.block ?? []).map(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Chevrotain visitor returns unknown
-      (cst) => this.visit(cst, sourceText) as BlockNode,
-    );
-    // Open blocks use a single token type for both open and
-    // close. The CST array has open at [0] and close at [1].
-    // Split into separate arrays for buildParentBlock.
+    // Split the shared delimiter array into open/close.
     const delimiters = context.OpenBlockDelimiter ?? [];
-    return buildParentBlock(
-      delimiters.slice(FIRST, NEXT),
-      delimiters.slice(NEXT),
-      "open",
-      children,
-    );
+    return this.visitParentBlock({
+      blocks: context.block,
+      openTokens: delimiters.slice(FIRST, NEXT),
+      closeTokens: delimiters.slice(NEXT),
+      variant: "open",
+      sourceText,
+    });
   }
 
   /**
-   * Builds a quote block from delimiter tokens and
-   * recursively visited child blocks.
+   * Builds a quote block (`____`). Quote blocks contain
+   * block-level children — nested lists, paragraphs,
+   * and other blocks are all allowed inside.
+   * @param context - CST children with delimiters and
+   *   nested block sub-rules.
+   * @param sourceText - Passed through to child visitors.
+   * @returns Parent block with variant `"quote"`.
    */
   quoteBlock(
     context: QuoteBlockCstChildren,
     sourceText: string,
   ): ParentBlockNode {
-    const children = (context.block ?? []).map(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Chevrotain visitor returns unknown
-      (cst) => this.visit(cst, sourceText) as BlockNode,
-    );
-    return buildParentBlock(
-      context.QuoteBlockOpen,
-      context.QuoteBlockClose,
-      "quote",
-      children,
-    );
+    return this.visitParentBlock({
+      blocks: context.block,
+      openTokens: context.QuoteBlockOpen,
+      closeTokens: context.QuoteBlockClose,
+      variant: "quote",
+      sourceText,
+    });
   }
 
   /**
    * Builds a literal paragraph from consecutive indented lines.
    * Each IndentedLine token preserves its leading spaces; we
    * join them with newlines to form the verbatim content.
+   * Literal paragraphs are the implicit form of literal
+   * blocks — any line starting with one or more spaces is
+   * treated as literal, no delimiters needed.
+   * @param context - CST children containing IndentedLine
+   *   tokens, each with its leading whitespace preserved in
+   *   the token image.
+   * @returns Delimited block node with variant "literal" and
+   *   form "indented", content joined from the token images.
    */
   literalParagraph(context: LiteralParagraphCstChildren): DelimitedBlockNode {
     const lineTokens = context.IndentedLine ?? [];
@@ -573,7 +763,12 @@ export class AstBuilder extends BaseCstVisitor {
    * Admonition paragraph: `NOTE: text`, `TIP: text`, etc.
    * The marker token image is `"NOTE: "` — we strip the
    * trailing colon-space to get the variant name. Text content
-   * tokens (if any) are joined with newlines for reflow.
+   * tokens (if any) are joined with newlines into the `content`
+   * string on the resulting node, which the printer may reflow.
+   * @param context - CST children with the admonition marker
+   *   token (e.g. "NOTE: ") and inline content lines.
+   * @returns Admonition node with variant derived from the
+   *   marker and inline text content for the body.
    */
   admonitionParagraph(context: AdmonitionParagraphCstChildren): AdmonitionNode {
     return buildAdmonitionParagraph(
@@ -585,7 +780,17 @@ export class AstBuilder extends BaseCstVisitor {
     );
   }
 
-  /** Parses attribute entry: name, optional value, unset form. */
+  /**
+   * Parses an attribute entry line (`:name: value`) into its
+   * components. Handles three forms: set (`:name: value`),
+   * prefix-unset (`:!name:`), and suffix-unset (`:name!:`).
+   * Falls back to a recovered stub node when the token is
+   * missing or unparseable due to error recovery.
+   * @param context - CST children containing the single
+   *   AttributeEntry token whose image holds the full line.
+   * @returns Attribute entry node with parsed name, optional
+   *   trimmed value, and unset form indicator.
+   */
   attributeEntry(context: AttributeEntryCstChildren): AttributeEntryNode {
     const token = context.AttributeEntry?.[FIRST];
     const groups =

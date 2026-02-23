@@ -15,8 +15,11 @@
  * Line and column are 1-based; offset is 0-based.
  */
 export interface Location {
+  /** Zero-based character offset from the start of the source. */
   offset: number;
+  /** One-based line number in the source. */
   line: number;
+  /** One-based column number in the source. */
   column: number;
 }
 
@@ -26,9 +29,16 @@ export interface Location {
  * having positions on every node ensures those features work correctly.
  */
 export interface Node {
+  /** Discriminant tag identifying the concrete node kind. */
   type: string;
+  /**
+   * Source location with inclusive start and exclusive end,
+   * matching Prettier's locStart/locEnd conventions.
+   */
   position: {
+    /** Inclusive start point (first character of the node). */
     start: Location;
+    /** Exclusive end point (one past the last character). */
     end: Location;
   };
 }
@@ -38,40 +48,64 @@ export interface Node {
  * elements.
  */
 export interface DocumentNode extends Node {
+  /** Node discriminant. */
   type: "document";
+  /** Top-level block elements in document order. */
   children: BlockNode[];
 }
 
-/** A paragraph contains inline nodes (currently just text). */
+/** A paragraph contains inline nodes (text, emphasis, links, etc.). */
 export interface ParagraphNode extends Node {
+  /** Node discriminant. */
   type: "paragraph";
+  /** Inline content: text, emphasis, links, etc. */
   children: InlineNode[];
 }
 
 /** Raw text content. Lines within a paragraph are joined with \n in `value`. */
 export interface TextNode extends Node {
+  /** Node discriminant. */
   type: "text";
+  /** Raw text content; paragraph lines joined with `\n`. */
   value: string;
 }
 
 /** Bold inline span: `*text*` (constrained) or `**text**` (unconstrained). */
 export interface BoldNode extends Node {
+  /** Node discriminant. */
   type: "bold";
+  /**
+   * Whether the span uses constrained (`*`) or
+   * unconstrained (`**`) delimiters.
+   */
   constrained: boolean;
+  /** Inline content within the bold span. */
   children: InlineNode[];
 }
 
 /** Italic inline span: `_text_` (constrained) or `__text__` (unconstrained). */
 export interface ItalicNode extends Node {
+  /** Node discriminant. */
   type: "italic";
+  /**
+   * Whether the span uses constrained (`_`) or
+   * unconstrained (`__`) delimiters.
+   */
   constrained: boolean;
+  /** Inline content within the italic span. */
   children: InlineNode[];
 }
 
 /** Monospace inline span: `` `text` `` (constrained) or ` `` text `` ` (unconstrained). */
 export interface MonospaceNode extends Node {
+  /** Node discriminant. */
   type: "monospace";
+  /**
+   * Whether the span uses constrained (`` ` ``) or
+   * unconstrained (` `` `) delimiters.
+   */
   constrained: boolean;
+  /** Inline content within the monospace span. */
   children: InlineNode[];
 }
 
@@ -81,11 +115,19 @@ export interface MonospaceNode extends Node {
  * like `[red]#text#` or `[.classname]#text#`.
  */
 export interface HighlightNode extends Node {
+  /** Node discriminant. */
   type: "highlight";
+  /**
+   * Whether the span uses constrained (`#`) or
+   * unconstrained (`##`) delimiters.
+   */
   constrained: boolean;
-  /** Role/style attribute from the preceding `[role]` syntax.
-   * Undefined when no role is specified. */
+  /**
+   * Role/style attribute from the preceding `[role]` syntax.
+   * Undefined when no role is specified.
+   */
   role: string | undefined;
+  /** Inline content within the highlight span. */
   children: InlineNode[];
 }
 
@@ -95,8 +137,162 @@ export interface HighlightNode extends Node {
  * covers counter attributes like `{counter:name}`.
  */
 export interface AttributeReferenceNode extends Node {
+  /** Node discriminant. */
   type: "attributeReference";
+  /** Attribute name between the braces (e.g. `toc`). */
   name: string;
+}
+
+/**
+ * Inline link: a URL (`https://example.com`), a URL with
+ * display text (`https://example.com[text]`), a link macro
+ * (`link:path[text]`), or a mailto link (`mailto:addr[text]`).
+ * Preserved verbatim — no URL normalization.
+ */
+export interface LinkNode extends Node {
+  /** Node discriminant. */
+  type: "link";
+  /**
+   * `"url"` for bare URLs (`https://`, `http://`);
+   * `"macro"` for the `link:` and `mailto:` macros.
+   * Preserves the author's original syntax during
+   * round-trip.
+   */
+  form: "url" | "macro";
+  /** The link destination URL or path. */
+  target: string;
+  /**
+   * Display text from the attribute list (e.g. the
+   * `text` in `https://example.com[text]`). Undefined
+   * when no display text was provided.
+   */
+  text: string | undefined;
+}
+
+/**
+ * Cross-reference: `<<target>>`, `<<target,text>>`, or the
+ * xref macro `xref:target[text]`. Target may include a
+ * document path and fragment (`doc.adoc#anchor`).
+ */
+export interface XrefNode extends Node {
+  /** Node discriminant. */
+  type: "xref";
+  /**
+   * `"shorthand"` for `<<target>>` syntax; `"macro"`
+   * for `xref:target[]`. Preserves the author's original
+   * syntax during round-trip.
+   */
+  form: "shorthand" | "macro";
+  /** Cross-reference target ID or `doc.adoc#anchor`. */
+  target: string;
+  /**
+   * Display text (e.g. `<<id,text>>`). Undefined when
+   * no explicit display text was provided.
+   */
+  text: string | undefined;
+}
+
+/**
+ * Inline anchor: `[[id]]` or `[[id, reftext]]`. Sets an
+ * anchor point within paragraph text. The two-argument form
+ * provides default cross-reference display text.
+ */
+export interface InlineAnchorNode extends Node {
+  /** Node discriminant. */
+  type: "inlineAnchor";
+  /** Anchor identifier (the first argument). */
+  id: string;
+  /**
+   * Default cross-reference text from the two-argument
+   * form `[[id, reftext]]`. Undefined for single-argument
+   * anchors.
+   */
+  reftext: string | undefined;
+}
+
+/**
+ * Inline image macro: `image:target[alt]`. Preserved verbatim
+ * during round-trip — no image resolution or path normalization.
+ */
+export interface InlineImageNode extends Node {
+  /** Node discriminant. */
+  type: "inlineImage";
+  /** Image file path or URL. */
+  target: string;
+  /** Alt text from the attribute list. Undefined if omitted. */
+  alt: string | undefined;
+}
+
+/**
+ * Keyboard shortcut macro: `kbd:[keys]`. Renders as a
+ * keyboard input indicator in the output.
+ */
+export interface KbdNode extends Node {
+  /** Node discriminant. */
+  type: "kbd";
+  /** Key combination text (e.g. `Ctrl+C`). */
+  keys: string;
+}
+
+/**
+ * Button macro: `btn:[label]`. Renders as a UI button
+ * indicator in the output.
+ */
+export interface ButtonNode extends Node {
+  /** Node discriminant. */
+  type: "btn";
+  /** Button label text. */
+  label: string;
+}
+
+/**
+ * Menu selection macro: `menu:path[item]`. Represents a
+ * UI menu navigation sequence (e.g. File > Save).
+ */
+export interface MenuNode extends Node {
+  /** Node discriminant. */
+  type: "menu";
+  /** Menu path prefix (e.g. `File` in `menu:File[Save]`). */
+  path: string;
+  /** Final menu item (e.g. `Save` in `menu:File[Save]`). */
+  item: string;
+}
+
+/**
+ * Footnote or footnote reference. Three forms:
+ * - `footnote:[text]` — anonymous footnote
+ * - `footnoteref:[id,text]` — named footnote definition
+ * - `footnoteref:[id]` — reference to a named footnote
+ */
+export interface FootnoteNode extends Node {
+  /** Node discriminant. */
+  type: "footnote";
+  /** Footnote body text or reference ID text. */
+  text: string;
+  /** Name for footnoteref; undefined for anonymous footnotes. */
+  id: string | undefined;
+}
+
+/**
+ * Passthrough macro: `pass:[content]`. Content is excluded
+ * from normal inline substitutions and preserved verbatim.
+ */
+export interface PassthroughNode extends Node {
+  /** Node discriminant. */
+  type: "passthrough";
+  /** Raw passthrough content, excluded from substitutions. */
+  content: string;
+}
+
+/**
+ * Hard line break: ` +` at end of a line forces a break in
+ * the output. Represented as a standalone node rather than
+ * embedded in text so the printer can produce the correct
+ * Doc IR.
+ */
+export interface HardLineBreakNode extends Node {
+  /** Node discriminant. */
+  type: "hardLineBreak";
 }
 
 /** Content that appears within a paragraph (text, emphasis, links, etc.). */
@@ -106,17 +302,36 @@ export type InlineNode =
   | ItalicNode
   | MonospaceNode
   | HighlightNode
-  | AttributeReferenceNode;
+  | AttributeReferenceNode
+  | LinkNode
+  | XrefNode
+  | InlineAnchorNode
+  | InlineImageNode
+  | KbdNode
+  | ButtonNode
+  | MenuNode
+  | FootnoteNode
+  | PassthroughNode
+  | HardLineBreakNode;
 
 /**
- * A section heading and its child blocks. Level is 0-indexed (level 0 = "==",
- * level 4 = "======") to match the ASG convention. The grammar parses sections
+ * A section heading and its child blocks. Level is
+ * `(number of '=' signs) - 1`, so `==` is level 1 and `======` is
+ * level 5, matching the ASG convention. The grammar parses sections
  * flat; the AST builder groups subsequent blocks under their heading.
  */
 export interface SectionNode extends Node {
+  /** Node discriminant. */
   type: "section";
+  /**
+   * Heading depth: 1 for `==`, up to 5 for `======`,
+   * matching the ASG convention (level 0 is the
+   * document title `=`).
+   */
   level: number;
+  /** Heading text without the leading `=` markers. */
   heading: string;
+  /** Blocks nested under this section heading. */
   children: BlockNode[];
 }
 
@@ -126,8 +341,14 @@ export interface SectionNode extends Node {
  * array and does not participate in section nesting.
  */
 export interface DiscreteHeadingNode extends Node {
+  /** Node discriminant. */
   type: "discreteHeading";
+  /**
+   * Heading depth (1-5), same scale as
+   * `SectionNode.level`.
+   */
   level: number;
+  /** Heading text without the leading `=` markers. */
   heading: string;
 }
 
@@ -140,8 +361,14 @@ export interface DiscreteHeadingNode extends Node {
  * formatter can reproduce them faithfully.
  */
 export interface CommentNode extends Node {
+  /** Node discriminant. */
   type: "comment";
+  /**
+   * `"line"` for `// text`; `"block"` for the
+   * `////`-delimited form.
+   */
   commentType: "line" | "block";
+  /** Comment text without the delimiter syntax. */
   value: string;
 }
 
@@ -159,6 +386,7 @@ export interface CommentNode extends Node {
  * - `:!name:` or `:name!:` — unset (negation)
  */
 export interface AttributeEntryNode extends Node {
+  /** Node discriminant. */
   type: "attributeEntry";
   /** Clean attribute name without `!` prefix/suffix. */
   name: string;
@@ -185,7 +413,9 @@ export interface AttributeEntryNode extends Node {
  * not by AST nesting.
  */
 export interface DocumentTitleNode extends Node {
+  /** Node discriminant. */
   type: "documentTitle";
+  /** Title text without the leading `= ` marker. */
   title: string;
 }
 
@@ -200,8 +430,14 @@ export interface DocumentTitleNode extends Node {
  * nested ListNode.
  */
 export interface ListNode extends Node {
+  /** Node discriminant. */
   type: "list";
+  /**
+   * `"unordered"` for `*` markers, `"ordered"` for `.`
+   * markers, `"callout"` for `<N>` / `<.>` markers.
+   */
   variant: "unordered" | "ordered" | "callout";
+  /** Items in this list, in document order. */
   children: ListItemNode[];
 }
 
@@ -221,7 +457,13 @@ export interface ListNode extends Node {
  * masqueraded to verbatim via a style attribute.
  */
 export interface DelimitedBlockNode extends Node {
+  /** Node discriminant. */
   type: "delimitedBlock";
+  /**
+   * Block kind: `"listing"` (`----`), `"literal"` (`....`),
+   * `"pass"` (`++++`), `"verse"`, or a masqueraded parent
+   * block variant (`"example"`, `"sidebar"`, `"quote"`).
+   */
   variant:
     | "listing"
     | "literal"
@@ -235,6 +477,7 @@ export interface DelimitedBlockNode extends Node {
    * indentation, or paragraph form (attribute list + text).
    */
   form: "delimited" | "indented" | "paragraph";
+  /** Verbatim block content (no inline parsing). */
   content: string;
   /**
    * Source language hint from a Markdown-style fenced code
@@ -257,8 +500,14 @@ export interface DelimitedBlockNode extends Node {
 
 /** A parent block contains structured child blocks (parsed recursively). */
 export interface ParentBlockNode extends Node {
+  /** Node discriminant. */
   type: "parentBlock";
+  /**
+   * `"example"` (`====`), `"sidebar"` (`****`),
+   * `"open"` (`--`), or `"quote"` (`____`).
+   */
   variant: "example" | "sidebar" | "open" | "quote";
+  /** Nested block elements parsed recursively. */
   children: BlockNode[];
 }
 
@@ -275,24 +524,43 @@ export interface ParentBlockNode extends Node {
  * block-form have `children` and `undefined` content.
  */
 export interface AdmonitionNode extends Node {
+  /** Node discriminant. */
   type: "admonition";
+  /**
+   * Admonition label (lowercase): `"note"`, `"tip"`,
+   * `"important"`, `"caution"`, or `"warning"`. The
+   * printer uppercases this for output.
+   */
   variant: string;
+  /**
+   * `"paragraph"` for `NOTE: text` inline prefix;
+   * `"delimited"` for `[NOTE]` on a parent block.
+   */
   form: "paragraph" | "delimited";
-  // For delimited form: which parent block delimiter wraps the
-  // content (example `====` or open `--`). Undefined for
-  // paragraph form.
+  /**
+   * For delimited form: which parent block delimiter wraps
+   * the content (`"example"` for `====`, `"open"` for `--`).
+   * Undefined for paragraph form.
+   */
   delimiter: ParentBlockNode["variant"] | undefined;
+  /**
+   * Reflowable text for paragraph-form admonitions.
+   * Undefined for delimited-form (use `children`).
+   */
   content: string | undefined;
+  /** Nested blocks for delimited-form admonitions. */
   children: BlockNode[];
 }
 
 /** A thematic break: `'''` (three or more single quotes). */
 export interface ThematicBreakNode extends Node {
+  /** Node discriminant. */
   type: "thematicBreak";
 }
 
 /** A page break: `<<<` (three or more less-than signs). */
 export interface PageBreakNode extends Node {
+  /** Node discriminant. */
   type: "pageBreak";
 }
 
@@ -305,20 +573,32 @@ export interface PageBreakNode extends Node {
  * the printer to reproduce.
  */
 export interface ListItemNode extends Node {
+  /** Node discriminant. */
   type: "listItem";
+  /**
+   * Marker nesting depth: number of `*` or `.` characters
+   * in the original marker. The printer uses this to
+   * reproduce the correct indentation level.
+   */
   depth: number;
-  /** Checkbox state for checklist items. `undefined` for normal
+  /**
+   * Checkbox state for checklist items. `undefined` for normal
    * list items, `"checked"` for `[x]` or `[*]`, `"unchecked"`
-   * for `[ ]`. Only meaningful on unordered list items. */
+   * for `[ ]`. Only meaningful on unordered list items.
+   */
   checkbox: "checked" | "unchecked" | undefined;
-  /** The callout number for callout list items (e.g. 1 for
+  /**
+   * The callout number for callout list items (e.g. 1 for
    * `<1>`). `undefined` for non-callout items. Use 0 for
-   * auto-numbered (`<.>`) callouts. */
+   * auto-numbered (`<.>`) callouts.
+   */
   calloutNumber: number | undefined;
+  /**
+   * Item content: inline nodes for the principal text,
+   * plus any nested `ListNode` children for sub-lists.
+   */
   children: Array<InlineNode | ListNode>;
 }
-
-/** A top-level structural element of a document. */
 
 /**
  * A block attribute list: `[source,ruby]`, `[#myid]`, `[.role]`, etc.
@@ -333,21 +613,14 @@ export interface ListItemNode extends Node {
  * text so the printer can reproduce the original syntax faithfully.
  */
 export interface BlockAttributeListNode extends Node {
+  /** Node discriminant. */
   type: "blockAttributeList";
+  /**
+   * Raw text between the brackets, e.g. `"source,ruby"`
+   * for `[source,ruby]`. Preserved verbatim for the
+   * printer to reproduce faithfully.
+   */
   value: string;
-}
-
-/**
- * A block anchor: `[[anchor-id]]` or `[[id,reftext]]`.
- *
- * Block anchors create a cross-reference target at the block that
- * follows them. The `id` field holds just the identifier; the
- * optional `reftext` holds the display text after the comma.
- */
-export interface BlockAnchorNode extends Node {
-  type: "blockAnchor";
-  id: string;
-  reftext: string | undefined;
 }
 
 /**
@@ -358,10 +631,13 @@ export interface BlockAnchorNode extends Node {
  * in `title`). The `title` field contains the text after the dot.
  */
 export interface BlockTitleNode extends Node {
+  /** Node discriminant. */
   type: "blockTitle";
+  /** Title text after the leading `.` (dot not stored). */
   title: string;
 }
 
+/** A top-level structural element of a document. */
 export type BlockNode =
   | ParagraphNode
   | SectionNode
@@ -376,5 +652,4 @@ export type BlockNode =
   | ThematicBreakNode
   | PageBreakNode
   | BlockAttributeListNode
-  | BlockAnchorNode
   | BlockTitleNode;

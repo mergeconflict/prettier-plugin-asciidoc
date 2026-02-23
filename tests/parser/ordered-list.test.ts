@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import { firstList } from "../helpers.js";
+import { unreachable } from "../../src/unreachable.js";
 
 describe("ordered list parsing", () => {
   // The simplest case: a single `. item` line is a one-item list.
@@ -36,32 +37,32 @@ describe("ordered list parsing", () => {
     } = list;
     // Parent item has text + nested list
     const nestedList = parent.children.find((c) => c.type === "list");
-    expect(nestedList).toBeDefined();
-    if (nestedList?.type === "list") {
-      expect(nestedList.variant).toBe("ordered");
-      expect(nestedList.children).toHaveLength(1);
-      expect(nestedList.children[0].depth).toBe(2);
-    }
+    if (nestedList?.type !== "list") unreachable("expected nested list");
+    expect(nestedList.variant).toBe("ordered");
+    expect(nestedList.children).toHaveLength(1);
+    expect(nestedList.children[0].depth).toBe(2);
   });
 
-  // A list item can span multiple lines. Continuation lines
-  // (lines that don't start with a list marker) are part of the
-  // preceding item's text content.
+  // A list item can span multiple lines. A flush (non-indented)
+  // continuation line — one that is not a list marker and not
+  // blank — is absorbed into the preceding item's text content.
+  // Indented continuation lines follow a different lexer path;
+  // see "indented continuation lines in ordered list".
   test("list item with continuation line", () => {
     const { children } = parse(". First line\nsecond line\n");
     expect(children).toHaveLength(1);
     const list = firstList(children);
     expect(list.children).toHaveLength(1);
-    // The text content should contain both lines
+    // toContain (not toBe) because continuation merges lines
+    // with a newline character; exact whitespace is tested in
+    // "indented continuation lines in ordered list".
     const {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    expect(textNode).toBeDefined();
-    if (textNode?.type === "text") {
-      expect(textNode.value).toContain("First line");
-      expect(textNode.value).toContain("second line");
-    }
+    if (textNode?.type !== "text") unreachable("expected text node");
+    expect(textNode.value).toContain("First line");
+    expect(textNode.value).toContain("second line");
   });
 
   // Two lists separated by a blank line are distinct blocks.
@@ -89,13 +90,14 @@ describe("ordered list parsing", () => {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    expect(textNode).toBeDefined();
-    if (textNode?.type === "text") {
-      expect(textNode.value).toBe("Hello world");
-    }
+    if (textNode?.type !== "text") unreachable("expected text node");
+    expect(textNode.value).toBe("Hello world");
   });
 
-  // Deeper nesting: three levels.
+  // Three levels exercises the stack more than two: the
+  // nestListItems loop must push twice and then drain twice
+  // when the list ends, checking that collapseLevel wires
+  // each nested list onto the right parent item.
   test("three levels of nesting", () => {
     const input = ". Level 1\n.. Level 2\n... Level 3\n";
     const { children } = parse(input);
@@ -157,8 +159,12 @@ describe("ordered list parsing", () => {
     expect(nestedList.children).toHaveLength(2);
   });
 
-  // Indented continuation lines are part of the same list item,
-  // not separate literal paragraphs.
+  // A line with leading whitespace that immediately follows a list
+  // item is lexed as an IndentedLine token (not a new paragraph).
+  // The lexer strips that leading whitespace before building the
+  // text node, so the value contains clean content. This covers
+  // the real-world style of aligning wrapped text under a marker,
+  // e.g. ". First line\n  continuation line".
   test("indented continuation lines in ordered list", () => {
     const input = ". First line\n  continuation line\n";
     const { children } = parse(input);

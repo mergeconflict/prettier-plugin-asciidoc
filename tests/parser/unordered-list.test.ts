@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import { firstList } from "../helpers.js";
+import { unreachable } from "../../src/unreachable.js";
 
 describe("unordered list parsing", () => {
   // The simplest case: a single `* item` line is a one-item list.
@@ -36,17 +37,17 @@ describe("unordered list parsing", () => {
     } = list;
     // Parent item has text + nested list
     const nestedList = parent.children.find((c) => c.type === "list");
-    expect(nestedList).toBeDefined();
-    if (nestedList?.type === "list") {
-      expect(nestedList.variant).toBe("unordered");
-      expect(nestedList.children).toHaveLength(1);
-      expect(nestedList.children[0].depth).toBe(2);
-    }
+    if (nestedList?.type !== "list") unreachable("expected nested list");
+    expect(nestedList.variant).toBe("unordered");
+    expect(nestedList.children).toHaveLength(1);
+    expect(nestedList.children[0].depth).toBe(2);
   });
 
-  // A list item can span multiple lines. Continuation lines (lines
-  // that don't start with a list marker) are part of the preceding
-  // item's text content.
+  // A list item can span multiple lines. A plain text line that
+  // follows the marker line (no blank line between them) is
+  // absorbed into the item rather than starting a new block.
+  // "Continuation line" here means a wrapped paragraph line, not
+  // an AsciiDoc list-continuation block (`+` on its own line).
   test("list item with continuation line", () => {
     const { children } = parse("* First line\nsecond line\n");
     expect(children).toHaveLength(1);
@@ -57,11 +58,9 @@ describe("unordered list parsing", () => {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    expect(textNode).toBeDefined();
-    if (textNode?.type === "text") {
-      expect(textNode.value).toContain("First line");
-      expect(textNode.value).toContain("second line");
-    }
+    if (textNode?.type !== "text") unreachable("expected text node");
+    expect(textNode.value).toContain("First line");
+    expect(textNode.value).toContain("second line");
   });
 
   // Two lists separated by a blank line are distinct blocks.
@@ -88,10 +87,8 @@ describe("unordered list parsing", () => {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    expect(textNode).toBeDefined();
-    if (textNode?.type === "text") {
-      expect(textNode.value).toBe("Hello world");
-    }
+    if (textNode?.type !== "text") unreachable("expected text node");
+    expect(textNode.value).toBe("Hello world");
   });
 
   // Deeper nesting: three levels.
@@ -197,9 +194,10 @@ describe("unordered list parsing", () => {
     expect(textNode.value).toBe("Item");
   });
 
-  // Indented continuation lines (common in real-world AsciiDoc for
-  // aligning text after the marker) are part of the same list item,
-  // not separate literal paragraphs.
+  // Indented lines are normally literal paragraphs in AsciiDoc.
+  // Inside a list item they are absorbed as continuation content
+  // instead. This exercises the IndentedLine token path (Pattern 2
+  // in the grammar) rather than the InlineModeStart path.
   test("indented continuation lines are part of list item", () => {
     const input = "* First line\n  continuation line\n  another continuation\n";
     const { children } = parse(input);
@@ -210,16 +208,17 @@ describe("unordered list parsing", () => {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    expect(textNode).toBeDefined();
-    if (textNode?.type === "text") {
-      expect(textNode.value).toBe(
-        "First line\ncontinuation line\nanother continuation",
-      );
-    }
+    if (textNode?.type !== "text") unreachable("expected text node");
+    expect(textNode.value).toBe(
+      "First line\ncontinuation line\nanother continuation",
+    );
   });
 
-  // Mixed indented and non-indented continuation lines are all
-  // part of the same list item paragraph.
+  // Mixed indented and flush continuation lines are both absorbed.
+  // The flush line re-enters inline mode via InlineModeStart
+  // (Pattern 1); the indented line uses the IndentedLine token
+  // path (Pattern 2). Both mechanisms must cooperate to produce
+  // a single, ordered inline stream for the item.
   test("mixed indented and non-indented continuation", () => {
     const input = "* First line\n  indented continuation\nflush continuation\n";
     const { children } = parse(input);
@@ -230,15 +229,15 @@ describe("unordered list parsing", () => {
       children: [item],
     } = list;
     const textNode = item.children.find((c) => c.type === "text");
-    expect(textNode).toBeDefined();
-    if (textNode?.type === "text") {
-      expect(textNode.value).toBe(
-        "First line\nindented continuation\nflush continuation",
-      );
-    }
+    if (textNode?.type !== "text") unreachable("expected text node");
+    expect(textNode.value).toBe(
+      "First line\nindented continuation\nflush continuation",
+    );
   });
 
-  // Indented continuation in a nested list item.
+  // Indented continuation works at any nesting level, not just the
+  // root. 3 spaces are used here (vs. 2 above) to confirm the
+  // parser uses any non-zero indentation, not a fixed column.
   test("indented continuation in nested list item", () => {
     const input = "* Parent\n** Child first line\n   child continuation\n";
     const { children } = parse(input);

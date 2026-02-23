@@ -3,6 +3,9 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import love from "eslint-config-love";
 import unicorn from "eslint-plugin-unicorn";
+import jsdoc from "eslint-plugin-jsdoc";
+import prettier from "eslint-config-prettier";
+import vitest from "@vitest/eslint-plugin";
 
 export default defineConfig(
   // Global ignores.
@@ -23,6 +26,9 @@ export default defineConfig(
   // eslint-plugin-unicorn: modern JS/TS conventions.
   unicorn.configs["recommended"],
 
+  // eslint-plugin-jsdoc: JSDoc consistency and correctness.
+  jsdoc.configs["flat/recommended-typescript-error"],
+
   // TypeScript file settings.
   {
     files: ["**/*.ts"],
@@ -40,6 +46,23 @@ export default defineConfig(
       "unicorn/no-null": "error",
       "no-console": "error",
 
+      // Require JSDoc on exported interfaces/types and their
+      // fields, not just functions and classes.
+      "jsdoc/require-jsdoc": [
+        "error",
+        {
+          contexts: [
+            "TSInterfaceDeclaration[parent.type='ExportNamedDeclaration']",
+            "TSTypeAliasDeclaration[parent.type='ExportNamedDeclaration']",
+            "TSInterfaceDeclaration[parent.type='ExportNamedDeclaration'] TSPropertySignature",
+            "TSTypeAliasDeclaration TSPropertySignature",
+          ],
+        },
+      ],
+
+      // The base no-unused-vars rule doesn't understand TS type
+      // imports and produces false positives; the TS-aware version
+      // handles them correctly.
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
@@ -51,18 +74,41 @@ export default defineConfig(
     },
   },
 
-  // Test files: relax magic numbers and null rules for test data.
+  // Test files: Vitest rules + relax magic numbers and null.
   {
     files: ["tests/**/*.ts"],
+    ...vitest.configs.recommended,
     rules: {
+      ...vitest.configs.recommended.rules,
+
+      // .skip with a test body is a legitimate pattern for
+      // tests awaiting a bug fix (body preserves the impl).
+      "vitest/no-disabled-tests": "off",
+
+      // Tests delegate to helpers like expectTCK() that
+      // contain the actual assertions.
+      "vitest/expect-expect": [
+        "error",
+        { assertFunctionNames: ["expect", "expectTCK", "expectTCKInlines"] },
+      ],
+
+      // Magic numbers are unavoidable in test assertions (counts,
+      // indices, expected values). null appears in fixture data and
+      // Vitest matcher expectations.
       "@typescript-eslint/no-magic-numbers": "off",
       "unicorn/no-null": "off",
     },
   },
 
-  // Plain JS config files: disable type-checked rules.
+  // Plain JS config files: disable type-checked rules. JS files
+  // aren't part of the tsconfig project service and can't be
+  // type-checked.
   {
     files: ["**/*.js"],
     ...tseslint.configs.disableTypeChecked,
   },
+
+  // eslint-config-prettier: disable rules that conflict with
+  // Prettier formatting. Must be last to override earlier configs.
+  prettier,
 );

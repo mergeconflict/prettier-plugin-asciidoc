@@ -64,7 +64,7 @@ const adocLine = fc.oneof(
     )
     .map(([name, value]) => `:${name}: ${value}`),
 
-  // BlockAnchor: `[[id]]`
+  // Anchor shorthand: `[[id]]` (parsed as inline anchor)
   fc.stringMatching(/[A-Za-z_][\w-]{0,14}/).map((s) => `[[${s}]]`),
 
   // BlockAttributeList: `[source,ruby]`, `[#myid]`, `[.role]`

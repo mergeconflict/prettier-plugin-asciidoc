@@ -3,15 +3,23 @@
  *
  * Block attributes are lines that precede a block and modify it:
  * - `[source,ruby]` — block attribute list
- * - `[[anchor-id]]` — block anchor
+ * - `[[anchor-id]]` — inline anchor, parsed as a paragraph
+ *   containing an `inlineAnchor` node (not its own block type)
  * - `.Block Title` — block title
  *
- * These are parsed as standalone block-level nodes (like line
- * comments and attribute entries). The printer handles stacking
- * them with the following block (no blank line between them).
+ * Attribute lists and block titles are standalone block-level
+ * nodes (like line comments and attribute entries). The printer
+ * stacks them with the following block (no blank line between).
+ *
+ * Inline anchors (`[[id]]`) are lexed as inline tokens, so they
+ * fall through to inline paragraph parsing. A `[[id]]` on its
+ * own line produces a single-child paragraph; when followed by
+ * text (no blank line), the anchor and text share one paragraph
+ * because paragraph continuation applies normally.
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
+import { unreachable } from "../../src/unreachable.js";
 
 describe("block attribute list parsing", () => {
   // The fundamental case: a positional attribute list like
@@ -20,61 +28,74 @@ describe("block attribute list parsing", () => {
   test("[source,ruby] parses as a block attribute list", () => {
     const document = parse("[source,ruby]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAttributeList");
-    if (document.children[0].type === "blockAttributeList") {
-      expect(document.children[0].value).toBe("source,ruby");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockAttributeList")
+      unreachable("expected blockAttributeList");
+    expect(child0.value).toBe("source,ruby");
   });
 
   // Shorthand ID syntax: [#myid] sets the block's ID.
   test("[#myid] shorthand ID parses correctly", () => {
     const document = parse("[#myid]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAttributeList");
-    if (document.children[0].type === "blockAttributeList") {
-      expect(document.children[0].value).toBe("#myid");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockAttributeList")
+      unreachable("expected blockAttributeList");
+    expect(child0.value).toBe("#myid");
   });
 
   // Shorthand role syntax: [.role] sets the block's role.
   test("[.role] shorthand role parses correctly", () => {
     const document = parse("[.role]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAttributeList");
-    if (document.children[0].type === "blockAttributeList") {
-      expect(document.children[0].value).toBe(".role");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockAttributeList")
+      unreachable("expected blockAttributeList");
+    expect(child0.value).toBe(".role");
   });
 
   // Combined shorthand: [#id.role%option] with ID, role, and
-  // option all in one attribute list.
+  // option (`%`) all in one attribute list. The `%option`
+  // syntax sets a block option flag (e.g. `%autowidth`).
   test("[#id.role%option] combined shorthand", () => {
     const document = parse("[#id.role%option]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAttributeList");
-    if (document.children[0].type === "blockAttributeList") {
-      expect(document.children[0].value).toBe("#id.role%option");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockAttributeList")
+      unreachable("expected blockAttributeList");
+    expect(child0.value).toBe("#id.role%option");
   });
 
   // Named attributes: [start=7] on an ordered list.
   test("[start=7] named attribute", () => {
     const document = parse("[start=7]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAttributeList");
-    if (document.children[0].type === "blockAttributeList") {
-      expect(document.children[0].value).toBe("start=7");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockAttributeList")
+      unreachable("expected blockAttributeList");
+    expect(child0.value).toBe("start=7");
   });
 
   // Style attributes like [abstract], [appendix] before sections.
   test("[abstract] style attribute", () => {
     const document = parse("[abstract]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAttributeList");
-    if (document.children[0].type === "blockAttributeList") {
-      expect(document.children[0].value).toBe("abstract");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockAttributeList")
+      unreachable("expected blockAttributeList");
+    expect(child0.value).toBe("abstract");
   });
 
   // Block attribute list before a listing block should stack.
@@ -111,54 +132,84 @@ describe("block attribute list parsing", () => {
   test("empty attribute list [] parses correctly", () => {
     const document = parse("[]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAttributeList");
-    if (document.children[0].type === "blockAttributeList") {
-      expect(document.children[0].value).toBe("");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockAttributeList")
+      unreachable("expected blockAttributeList");
+    expect(child0.value).toBe("");
   });
 });
 
-describe("block anchor parsing", () => {
-  // Block anchor: [[anchor-id]] creates an anchor point.
-  test("[[anchor-id]] parses as a block anchor", () => {
+describe("standalone anchor parsing", () => {
+  // `[[anchor-id]]` on its own line is lexed as an InlineAnchor
+  // token inside inline mode. Because there is no dedicated
+  // block-level anchor token, it falls through to paragraph
+  // parsing and becomes a single-child paragraph.
+  test("[[anchor-id]] parses as paragraph with inline anchor", () => {
     const document = parse("[[anchor-id]]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAnchor");
-    if (document.children[0].type === "blockAnchor") {
-      expect(document.children[0].id).toBe("anchor-id");
-      expect(document.children[0].reftext).toBeUndefined();
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    expect(child0.children).toHaveLength(1);
+    const {
+      children: [anchor0],
+    } = child0;
+    if (anchor0.type !== "inlineAnchor") unreachable("expected inlineAnchor");
+    expect(anchor0.id).toBe("anchor-id");
+    expect(anchor0.reftext).toBeUndefined();
   });
 
-  // Anchor with reftext: [[id,reftext]] — the id and reftext
-  // are split on the first comma.
+  // Anchor with reftext: [[id,reftext]] — split on the first
+  // comma. Everything after the comma is the reftext; it is
+  // preserved verbatim (whitespace included).
   test("[[id,reftext]] anchor with reftext", () => {
     const document = parse("[[my-id,My Reference Text]]\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockAnchor");
-    if (document.children[0].type === "blockAnchor") {
-      expect(document.children[0].id).toBe("my-id");
-      expect(document.children[0].reftext).toBe("My Reference Text");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    expect(child0.children).toHaveLength(1);
+    const {
+      children: [anchor0],
+    } = child0;
+    if (anchor0.type !== "inlineAnchor") unreachable("expected inlineAnchor");
+    expect(anchor0.id).toBe("my-id");
+    expect(anchor0.reftext).toBe("My Reference Text");
   });
 
-  // Anchor before a paragraph.
-  test("block anchor before a paragraph", () => {
+  // Anchor before a paragraph on the next line — they merge
+  // into a single paragraph since there's no blank line. The
+  // anchor becomes the first child and the text tokens follow.
+  test("anchor before text forms one paragraph", () => {
     const document = parse("[[my-anchor]]\nSome text.\n");
-    expect(document.children).toHaveLength(2);
-    expect(document.children[0].type).toBe("blockAnchor");
-    expect(document.children[1].type).toBe("paragraph");
+    expect(document.children).toHaveLength(1);
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    // Anchor is first child; text node(s) follow in the same paragraph.
+    expect(child0.children[0].type).toBe("inlineAnchor");
+    expect(child0.children.length).toBeGreaterThan(1);
   });
 
-  // Anchor position tracking.
-  test("block anchor has correct position", () => {
+  // Anchor position tracking — positions come from the
+  // InlineAnchor token inside the paragraph.
+  test("standalone anchor has correct position", () => {
     const document = parse("[[my-id]]\n");
-    expect(document.children[0].position.start.offset).toBe(0);
-    expect(document.children[0].position.start.line).toBe(1);
-    expect(document.children[0].position.start.column).toBe(1);
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    expect(child0.children[0].position.start.offset).toBe(0);
+    expect(child0.children[0].position.start.line).toBe(1);
+    expect(child0.children[0].position.start.column).toBe(1);
     // "[[my-id]]" is 9 chars; end offset is exclusive
     const EXPECTED_END_OFFSET = 9;
-    expect(document.children[0].position.end.offset).toBe(EXPECTED_END_OFFSET);
+    expect(child0.children[0].position.end.offset).toBe(EXPECTED_END_OFFSET);
   });
 });
 
@@ -167,10 +218,11 @@ describe("block title parsing", () => {
   test(".Title parses as a block title", () => {
     const document = parse(".My Title\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockTitle");
-    if (document.children[0].type === "blockTitle") {
-      expect(document.children[0].title).toBe("My Title");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockTitle") unreachable("expected blockTitle");
+    expect(child0.title).toBe("My Title");
   });
 
   // Block title before a listing block.
@@ -231,21 +283,28 @@ describe("block title parsing", () => {
   test("block title with special characters", () => {
     const document = parse(".Title: a `code` example\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("blockTitle");
-    if (document.children[0].type === "blockTitle") {
-      expect(document.children[0].title).toBe("Title: a `code` example");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "blockTitle") unreachable("expected blockTitle");
+    expect(child0.title).toBe("Title: a `code` example");
   });
 });
 
 describe("combined block metadata", () => {
-  // All three types stacked: anchor, title, attribute list.
+  // All three types stacked before a block: anchor (as a
+  // paragraph containing an inlineAnchor), title, attribute list.
   test("anchor + title + attribute list before a block", () => {
     const document = parse(
       "[[my-id]]\n.My Title\n[source,ruby]\n----\nputs 'hello'\n----\n",
     );
     expect(document.children).toHaveLength(4);
-    expect(document.children[0].type).toBe("blockAnchor");
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "paragraph") unreachable("expected paragraph");
+    expect(child0.children).toHaveLength(1);
+    expect(child0.children[0].type).toBe("inlineAnchor");
     expect(document.children[1].type).toBe("blockTitle");
     expect(document.children[2].type).toBe("blockAttributeList");
     expect(document.children[3].type).toBe("delimitedBlock");

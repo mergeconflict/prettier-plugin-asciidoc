@@ -1,18 +1,20 @@
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
+import { unreachable } from "../../src/unreachable.js";
 
 describe("section parsing", () => {
   // In AsciiDoc, == is a level-1 section heading (analogous to HTML h2).
   // The level is (number of = signs) - 1, because = (single) is reserved
-  // for the document title (Task 7).
+  // for the document title (a separate node type, not a section).
   test("== Title parses as section level 1", () => {
     const document = parse("== Title\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("section");
-    if (document.children[0].type === "section") {
-      expect(document.children[0].level).toBe(1);
-      expect(document.children[0].heading).toBe("Title");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "section") unreachable("expected section");
+    expect(child0.level).toBe(1);
+    expect(child0.heading).toBe("Title");
   });
 
   // === is level 2 (h3). Verify independent of the previous test to catch
@@ -20,10 +22,12 @@ describe("section parsing", () => {
   test("=== Title parses as section level 2", () => {
     const document = parse("=== Subsection\n");
     expect(document.children).toHaveLength(1);
-    if (document.children[0].type === "section") {
-      expect(document.children[0].level).toBe(2);
-      expect(document.children[0].heading).toBe("Subsection");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "section") unreachable("expected section");
+    expect(child0.level).toBe(2);
+    expect(child0.heading).toBe("Subsection");
   });
 
   // AsciiDoc supports headings from == (level 1) through ====== (level 5).
@@ -33,9 +37,11 @@ describe("section parsing", () => {
       const marker = "=".repeat(equals);
       const document = parse(`${marker} Heading\n`);
       expect(document.children).toHaveLength(1);
-      if (document.children[0].type === "section") {
-        expect(document.children[0].level).toBe(equals - 1);
-      }
+      const {
+        children: [child0],
+      } = document;
+      if (child0.type !== "section") unreachable("expected section");
+      expect(child0.level).toBe(equals - 1);
     }
   });
 
@@ -46,10 +52,12 @@ describe("section parsing", () => {
     const input = "== Title\n\nSome text.\n";
     const document = parse(input);
     expect(document.children).toHaveLength(1);
-    if (document.children[0].type === "section") {
-      expect(document.children[0].children).toHaveLength(1);
-      expect(document.children[0].children[0].type).toBe("paragraph");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "section") unreachable("expected section");
+    expect(child0.children).toHaveLength(1);
+    expect(child0.children[0].type).toBe("paragraph");
   });
 
   // A new heading at the same level closes the previous section.
@@ -79,15 +87,18 @@ describe("section parsing", () => {
   // so the printer can emit a canonical form.
   test("heading text has extra whitespace trimmed", () => {
     const document = parse("==  Extra Spaces  \n");
-    if (document.children[0].type === "section") {
-      expect(document.children[0].heading).toBe("Extra Spaces");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "section") unreachable("expected section");
+    expect(child0.heading).toBe("Extra Spaces");
   });
 
-  // 7+ equals signs exceed the SectionMarker range ({2,6}) and don't
-  // match DocumentTitle either (which requires `= ` — equals then space
-  // — at position 0, but position 1 here is `=`). So the line falls
-  // through to InlineModeStart and becomes a paragraph.
+  // 7+ equals signs exceed the SectionMarker range ({2,6}). DocumentTitle
+  // also won't match: its pattern requires exactly one `=` followed
+  // immediately by a space, but here the second character is `=`, not a
+  // space. The line falls through to InlineModeStart and becomes a
+  // paragraph.
   test("seven equals signs parsed as paragraph, not heading", () => {
     const document = parse("======= Not a heading\n");
     expect(document.children).toHaveLength(1);
@@ -102,18 +113,14 @@ describe("section nesting", () => {
     const {
       children: [parent],
     } = parse("== Parent\n\n=== Child\n");
-    expect(parent.type).toBe("section");
-    if (parent.type === "section") {
-      expect(parent.heading).toBe("Parent");
-      expect(parent.children).toHaveLength(1);
-      const {
-        children: [child],
-      } = parent;
-      expect(child.type).toBe("section");
-      if (child.type === "section") {
-        expect(child.heading).toBe("Child");
-      }
-    }
+    if (parent.type !== "section") unreachable("expected section");
+    expect(parent.heading).toBe("Parent");
+    expect(parent.children).toHaveLength(1);
+    const {
+      children: [child],
+    } = parent;
+    if (child.type !== "section") unreachable("expected section");
+    expect(child.heading).toBe("Child");
   });
 
   // A same-level section closes the previous one. Both are children
@@ -122,21 +129,16 @@ describe("section nesting", () => {
     const {
       children: [sectionA, sectionC],
     } = parse("== A\n\n=== B\n\n== C\n");
-    expect(sectionA.type).toBe("section");
-    expect(sectionC.type).toBe("section");
-    if (sectionA.type === "section") {
-      expect(sectionA.heading).toBe("A");
-      expect(sectionA.children).toHaveLength(1);
-      const {
-        children: [childB],
-      } = sectionA;
-      if (childB.type === "section") {
-        expect(childB.heading).toBe("B");
-      }
-    }
-    if (sectionC.type === "section") {
-      expect(sectionC.heading).toBe("C");
-    }
+    if (sectionA.type !== "section") unreachable("expected section");
+    if (sectionC.type !== "section") unreachable("expected section");
+    expect(sectionA.heading).toBe("A");
+    expect(sectionA.children).toHaveLength(1);
+    const {
+      children: [childB],
+    } = sectionA;
+    if (childB.type !== "section") unreachable("expected section");
+    expect(childB.heading).toBe("B");
+    expect(sectionC.heading).toBe("C");
   });
 
   // Multiple subsections at the same level are all children of the
@@ -145,18 +147,15 @@ describe("section nesting", () => {
     const {
       children: [parent],
     } = parse("== A\n\n=== B\n\n=== C\n");
-    if (parent.type === "section") {
-      expect(parent.children).toHaveLength(2);
-      const {
-        children: [childB, childC],
-      } = parent;
-      if (childB.type === "section") {
-        expect(childB.heading).toBe("B");
-      }
-      if (childC.type === "section") {
-        expect(childC.heading).toBe("C");
-      }
-    }
+    if (parent.type !== "section") unreachable("expected section");
+    expect(parent.children).toHaveLength(2);
+    const {
+      children: [childB, childC],
+    } = parent;
+    if (childB.type !== "section") unreachable("expected section");
+    expect(childB.heading).toBe("B");
+    if (childC.type !== "section") unreachable("expected section");
+    expect(childC.heading).toBe("C");
   });
 
   // Three levels deep: ==== is child of ===, which is child of ==.
@@ -164,22 +163,19 @@ describe("section nesting", () => {
     const {
       children: [sectionA],
     } = parse("== A\n\n=== B\n\n==== C\n");
-    if (sectionA.type === "section") {
-      expect(sectionA.heading).toBe("A");
-      expect(sectionA.children).toHaveLength(1);
-      const {
-        children: [sectionB],
-      } = sectionA;
-      if (sectionB.type === "section") {
-        expect(sectionB.heading).toBe("B");
-        expect(sectionB.children).toHaveLength(1);
-        const {
-          children: [sectionC],
-        } = sectionB;
-        if (sectionC.type === "section") {
-          expect(sectionC.heading).toBe("C");
-        }
-      }
-    }
+    if (sectionA.type !== "section") unreachable("expected section");
+    expect(sectionA.heading).toBe("A");
+    expect(sectionA.children).toHaveLength(1);
+    const {
+      children: [sectionB],
+    } = sectionA;
+    if (sectionB.type !== "section") unreachable("expected section");
+    expect(sectionB.heading).toBe("B");
+    expect(sectionB.children).toHaveLength(1);
+    const {
+      children: [sectionC],
+    } = sectionB;
+    if (sectionC.type !== "section") unreachable("expected section");
+    expect(sectionC.heading).toBe("C");
   });
 });

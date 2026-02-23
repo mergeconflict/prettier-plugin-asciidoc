@@ -8,6 +8,7 @@
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
+import { unreachable } from "../../src/unreachable.js";
 
 describe("document title parsing", () => {
   // The document title is a level-0 heading using a single `=` marker.
@@ -15,10 +16,11 @@ describe("document title parsing", () => {
   test("= Title parses as documentTitle", () => {
     const document = parse("= My Document\n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("documentTitle");
-    if (document.children[0].type === "documentTitle") {
-      expect(document.children[0].title).toBe("My Document");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "documentTitle") unreachable("expected documentTitle");
+    expect(child0.title).toBe("My Document");
   });
 
   // Extra whitespace between the `=` marker and the title text should
@@ -26,9 +28,11 @@ describe("document title parsing", () => {
   test("extra whitespace in title is trimmed", () => {
     const document = parse("=  Extra Spaces  \n");
     expect(document.children).toHaveLength(1);
-    if (document.children[0].type === "documentTitle") {
-      expect(document.children[0].title).toBe("Extra Spaces");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "documentTitle") unreachable("expected documentTitle");
+    expect(child0.title).toBe("Extra Spaces");
   });
 
   // Position tracking: the document title starts at offset 0, line 1,
@@ -96,28 +100,31 @@ describe("document title parsing", () => {
   });
 
   // A document title at EOF without a trailing newline exercises the
-  // grammar's tolerance for missing trailing whitespace. The lexer
-  // regex `/= [^\n]+/` matches to end of input, and the grammar's
-  // MANY loop terminates without a trailing Newline token.
+  // lexer's tolerance for missing trailing whitespace. The DocumentTitle
+  // token pattern `/= (?!=)[^\n]+/` matches to end of input when there
+  // is no `\n`, so the lexer still emits the token and the parser
+  // produces a complete document title node.
   test("document title at EOF without trailing newline", () => {
     const document = parse("= Title");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("documentTitle");
-    if (document.children[0].type === "documentTitle") {
-      expect(document.children[0].title).toBe("Title");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "documentTitle") unreachable("expected documentTitle");
+    expect(child0.title).toBe("Title");
   });
 
-  // The token pattern `/= [^\n]+/` matches `= ` followed by any
+  // The token pattern `/= (?!=)[^\n]+/` matches `= ` followed by any
   // non-newline characters — including spaces. When the title is
   // only whitespace, `slice(2).trim()` produces an empty string.
   // This documents the parser's behavior for this degenerate input.
   test("= followed by only whitespace produces empty title", () => {
     const document = parse("=  \n");
     expect(document.children).toHaveLength(1);
-    expect(document.children[0].type).toBe("documentTitle");
-    if (document.children[0].type === "documentTitle") {
-      expect(document.children[0].title).toBe("");
-    }
+    const {
+      children: [child0],
+    } = document;
+    if (child0.type !== "documentTitle") unreachable("expected documentTitle");
+    expect(child0.title).toBe("");
   });
 });

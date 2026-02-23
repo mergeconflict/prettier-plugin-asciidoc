@@ -33,8 +33,10 @@ import type {
 } from "./ast.js";
 import {
   EMPTY,
+  FIRST,
   MARKER_OFFSET,
   MIN_DELIMITER_LENGTH,
+  NEXT,
   SAFE_DELIMITER_PAD,
 } from "./constants.js";
 import { printInlineNode } from "./print-inline.js";
@@ -48,48 +50,134 @@ const {
 // from the previous element", so the same constant applies.
 const SECOND_CHILD = 1;
 
-// Line comments and attribute entries are special cases for block
-// separation: consecutive elements of either type should appear on
-// adjacent lines, not separated by a blank line like other block
-// elements. This matches idiomatic AsciiDoc style.
+/**
+ * Tests whether a block is a line comment.
+ *
+ * Line comments and attribute entries are special cases
+ * for block separation: consecutive elements of either
+ * type should appear on adjacent lines, not separated by
+ * a blank line like other block elements. This matches
+ * idiomatic AsciiDoc style.
+ * @param block - The block node to test.
+ * @returns Whether the block is a line comment.
+ */
 function isLineComment(block: BlockNode): boolean {
   return block.type === "comment" && block.commentType === "line";
 }
 
+/**
+ * Tests whether a block is an attribute entry.
+ *
+ * Used alongside {@link isLineComment} to determine
+ * stacking: consecutive attribute entries appear on
+ * adjacent lines without a blank-line separator.
+ * @param block - The block node to test.
+ * @returns Whether the block is an attribute entry.
+ */
 function isAttributeEntry(block: BlockNode): boolean {
   return block.type === "attributeEntry";
 }
 
+/**
+ * Tests whether a block is a document title.
+ *
+ * Used in stacking logic: a document title followed
+ * by attribute entries forms a contiguous header
+ * (`= Title` then `:attr: value` with no blank line).
+ * @param block - The block node to test.
+ * @returns Whether the block is a document title.
+ */
 function isDocumentTitle(block: BlockNode): boolean {
   return block.type === "documentTitle";
 }
 
-// Block metadata (attribute lists, anchors, titles) stacks with
-// the following block — no blank line between them. This matches
-// idiomatic AsciiDoc where `[source,ruby]` sits directly above
-// `----` with no intervening blank line.
-function isBlockMetadata(block: BlockNode): boolean {
+/**
+ * Tests whether a block is a paragraph whose only child
+ * is an inline anchor (`[[id]]`).
+ *
+ * These act as block metadata when they appear on a
+ * standalone line, but unlike true metadata tokens they
+ * would merge with a following paragraph on re-parse
+ * (breaking idempotency), so stacking needs special
+ * treatment.
+ * @param block - The block node to test.
+ * @returns Whether the block is an anchor-only paragraph.
+ */
+function isAnchorParagraph(block: BlockNode): boolean {
   return (
-    block.type === "blockAttributeList" ||
-    block.type === "blockAnchor" ||
-    block.type === "blockTitle"
+    block.type === "paragraph" &&
+    block.children.length === NEXT &&
+    block.children[FIRST].type === "inlineAnchor"
   );
 }
 
-// Checks whether the block at `index` and the one before it should be
-// stacked on adjacent lines (single newline, no blank line). This
-// applies to:
-// - Consecutive line comments (idiomatic stacking)
-// - Consecutive attribute entries (idiomatic stacking)
-// - Document title followed by attribute entry (the contiguous
-//   header pattern: `= Title` then `:attr: value` with no blank line)
-// The reverse (attribute entry before title) is intentionally absent:
-// in AsciiDoc, attributes follow the title — they never precede it.
-//
-// Lists always get a blank-line separator — no stacking conditions
-// needed for list nodes. If future block types (delimited blocks,
-// tables) introduce more stacking patterns, consider switching
-// to a node property (e.g. `stackable`) instead of pairwise checks.
+/**
+ * Tests whether a block's content would merge with a
+ * preceding anchor paragraph if no blank line separated
+ * them.
+ *
+ * Plain paragraphs and paragraph-form admonitions both
+ * start with ordinary text that the parser would absorb
+ * into the anchor's paragraph on re-parse, breaking
+ * idempotency. A blank line must be preserved before
+ * these blocks when they follow an anchor paragraph.
+ * @param block - The block node to test.
+ * @returns Whether this block would merge with a
+ *   preceding anchor paragraph.
+ */
+function wouldMergeWithAnchor(block: BlockNode): boolean {
+  return (
+    (block.type === "paragraph" && !isAnchorParagraph(block)) ||
+    (block.type === "admonition" && block.form === "paragraph")
+  );
+}
+
+/**
+ * Tests whether a block is block metadata (attribute
+ * list, block title, or anchor paragraph).
+ *
+ * Block metadata stacks with the following block — no
+ * blank line between them. This matches idiomatic
+ * AsciiDoc where `[source,ruby]` sits directly above
+ * `----` with no intervening blank line.
+ * @param block - The block node to test.
+ * @returns Whether the block is block metadata.
+ */
+function isBlockMetadata(block: BlockNode): boolean {
+  return (
+    block.type === "blockAttributeList" ||
+    block.type === "blockTitle" ||
+    isAnchorParagraph(block)
+  );
+}
+
+/**
+ * Checks whether the block at `index` and the one before
+ * it should be stacked on adjacent lines (single newline,
+ * no blank line).
+ *
+ * Stacking applies to:
+ * - Consecutive line comments (idiomatic stacking)
+ * - Consecutive attribute entries (idiomatic stacking)
+ * - Document title followed by attribute entry (the
+ *   contiguous header pattern: `= Title` then
+ *   `:attr: value` with no blank line)
+ *
+ * The reverse (attribute entry before title) is
+ * intentionally absent: in AsciiDoc, attributes follow
+ * the title — they never precede it.
+ *
+ * Lists always get a blank-line separator — no stacking
+ * conditions needed for list nodes. If future block types
+ * (delimited blocks, tables) introduce more stacking
+ * patterns, consider switching to a node property (e.g.
+ * `stackable`) instead of pairwise checks.
+ * @param blocks - The full array of sibling block nodes.
+ * @param index - Index of the current block (must be
+ *   at least 1 so the previous block exists).
+ * @returns Whether the two blocks should stack without
+ *   a blank-line separator.
+ */
 function shouldStack(blocks: BlockNode[], index: number): boolean {
   const { [index - SECOND_CHILD]: previous, [index]: current } = blocks;
   return (
@@ -98,15 +186,31 @@ function shouldStack(blocks: BlockNode[], index: number): boolean {
     (isDocumentTitle(previous) && isAttributeEntry(current)) ||
     // Block metadata (attribute lists, anchors, titles) stacks
     // with each other and with the block that follows them.
-    // The previous node being metadata means this node should be
-    // on an adjacent line regardless of what it is.
-    isBlockMetadata(previous)
+    // Exception: anchor paragraphs must NOT stack with plain
+    // paragraphs — on re-parse the anchor would merge into the
+    // paragraph text, breaking idempotency.
+    (isBlockMetadata(previous) &&
+      (!isAnchorParagraph(previous) || !wouldMergeWithAnchor(current)))
   );
 }
 
-// Joins printed block children with appropriate separators.
-// Consecutive line comments get a single newline; all other
-// adjacent pairs get a blank line (double hardline).
+/**
+ * Joins printed block children with appropriate
+ * separators.
+ *
+ * Consecutive line comments and other stacked pairs get a
+ * single newline; all other adjacent pairs get a blank
+ * line (double hardline). This is the central block
+ * separation logic — every block-level container routes
+ * through here.
+ * @param blocks - The original AST block nodes, used to
+ *   determine stacking relationships between adjacent
+ *   siblings.
+ * @param printed - The corresponding Doc IR produced by
+ *   printing each block.
+ * @returns A single Doc with blocks separated by the
+ *   correct number of newlines.
+ */
 function joinBlocks(blocks: BlockNode[], printed: Doc[]): Doc {
   const result: Doc[] = [printed[EMPTY]];
   for (
@@ -125,40 +229,19 @@ function joinBlocks(blocks: BlockNode[], printed: Doc[]): Doc {
   return result;
 }
 
-// A whitespace-only paragraph is an artifact of source
-// formatting — e.g. a line containing only spaces before a
-// list item. Its inline content prints as empty, but without
-// filtering it out, joinBlocks would still insert a blank-line
-// separator for it, producing spurious leading blank lines.
-function isWhitespaceOnlyParagraph(block: BlockNode): boolean {
-  return (
-    block.type === "paragraph" &&
-    block.children.every(
-      (child) => child.type === "text" && child.value.trim().length === EMPTY,
-    )
-  );
-}
-
-// Filters out whitespace-only paragraphs from parallel
-// blocks/printed arrays. Returns the filtered pair.
-function filterBlocks(
-  blocks: BlockNode[],
-  printed: Doc[],
-): { blocks: BlockNode[]; printed: Doc[] } {
-  const filteredBlocks: BlockNode[] = [];
-  const filteredPrinted: Doc[] = [];
-  for (let index = EMPTY; index < blocks.length; index += SECOND_CHILD) {
-    if (!isWhitespaceOnlyParagraph(blocks[index])) {
-      filteredBlocks.push(blocks[index]);
-      filteredPrinted.push(printed[index]);
-    }
-  }
-  return { blocks: filteredBlocks, printed: filteredPrinted };
-}
-
-// Prints a comment node to Doc IR. Extracted from the main print
-// method to keep cyclomatic complexity manageable as more node
-// types are added.
+/**
+ * Prints a comment node to Doc IR.
+ *
+ * Extracted from the main print method to keep cyclomatic
+ * complexity manageable as more node types are added.
+ * Line comments produce `// text`; block comments produce
+ * `////` delimiters with verbatim content between them.
+ * @param node - The comment node.
+ * @param node.commentType - Whether this is a line
+ *   (`//`) or block (`////`) comment.
+ * @param node.value - The text content of the comment.
+ * @returns Doc IR for the formatted comment.
+ */
 function printComment(node: {
   commentType: "line" | "block";
   value: string;
@@ -180,11 +263,11 @@ function printComment(node: {
   return ["////", hardline, "////"];
 }
 
-// Leaf-block variants that use delimiter characters (----,
-// ...., ++++). Other variants (example, sidebar, quote, verse)
-// only appear in paragraph form and don't need delimiters in
-// this map — they're handled before reaching the delimiter
-// lookup in printDelimitedBlock.
+// Leaf-block variants that use their own delimiter characters
+// (----, ...., ++++). Other variants (example, sidebar, quote,
+// verse) either use parent-block delimiters when masqueraded
+// (case 1 of computeMasqueradeDelimiter) or fall through to
+// MASQUERADE_DELIMITER_CHARS (case 3).
 type LeafBlockVariant = "listing" | "literal" | "pass";
 
 // Maps each leaf-block variant to its single delimiter character.
@@ -203,10 +286,12 @@ const DELIMITER_CHARS: Record<LeafBlockVariant, string> = {
 // is present on the node — e.g. a verse block that was parsed
 // directly rather than masqueraded from a parent block.
 type MasqueradedVariant = "verse" | "example" | "sidebar" | "quote";
-// Only `verse` is currently reachable (via paragraph-form
-// verse blocks). The other entries (`quote`, `example`,
-// `sidebar`) are present for future completeness — they'll
-// be reached once the parser supports those masquerade paths.
+// In practice none of these are currently reachable: verse
+// and other masquerade variants always carry `sourceDelimiter`
+// when produced by the parser (caught by case 1), or are
+// expressed in paragraph form (caught before calling
+// computeMasqueradeDelimiter). The entries are present for
+// defensive completeness against future parser paths.
 const MASQUERADE_DELIMITER_CHARS: Record<MasqueradedVariant, string> = {
   verse: "_",
   quote: "_",
@@ -214,12 +299,23 @@ const MASQUERADE_DELIMITER_CHARS: Record<MasqueradedVariant, string> = {
   sidebar: "*",
 };
 
-// Computes the shortest delimiter that won't conflict with
-// any line in the block's content. Scans for lines that
-// consist entirely of the delimiter character (4+ chars)
-// and returns a delimiter one character longer than the
-// longest conflict. Returns the minimum 4-char delimiter
-// when no conflicts exist.
+/**
+ * Computes the shortest safe delimiter for a delimited
+ * block.
+ *
+ * Scans the block content for lines that consist entirely
+ * of the delimiter character (4+ chars) — these would be
+ * misinterpreted as delimiters on re-parse. Returns a
+ * delimiter one character longer than the longest
+ * conflict. When no conflicts exist, returns the minimum
+ * 4-character delimiter.
+ * @param content - The verbatim text content of the
+ *   block.
+ * @param delimChar - The single character used for the
+ *   delimiter (e.g. `-` for listing blocks).
+ * @returns The delimiter string, repeated to a safe
+ *   length.
+ */
 function computeDelimiter(content: string, delimChar: string): string {
   let maxConflict = EMPTY;
   if (content.length > EMPTY) {
@@ -242,14 +338,23 @@ function computeDelimiter(content: string, delimChar: string): string {
   return delimChar.repeat(length);
 }
 
-// Resolves the correct delimiter string for a delimited block,
-// accounting for masquerading. Three cases:
-//
-// 1. sourceDelimiter is set → use parent block delimiter chars
-//    (the block was masqueraded from a parent block).
-// 2. Leaf variant (listing/literal/pass) → standard DELIMITER_CHARS.
-// 3. Masquerade variant (verse/quote/example/sidebar) without
-//    sourceDelimiter → use MASQUERADE_DELIMITER_CHARS.
+/**
+ * Resolves the correct delimiter string for a delimited
+ * block, accounting for masquerading.
+ *
+ * Three cases:
+ * 1. `sourceDelimiter` is set — use parent block
+ *    delimiter chars (the block was masqueraded from a
+ *    parent block).
+ * 2. Leaf variant (listing/literal/pass) — standard
+ *    {@link DELIMITER_CHARS}.
+ * 3. Masquerade variant (verse/quote/example/sidebar)
+ *    without `sourceDelimiter` — use
+ *    {@link MASQUERADE_DELIMITER_CHARS}.
+ * @param node - The delimited block node whose delimiter
+ *   to compute.
+ * @returns The correctly-sized delimiter string.
+ */
 function computeMasqueradeDelimiter(node: DelimitedBlockNode): string {
   if (node.sourceDelimiter !== undefined) {
     const { [node.sourceDelimiter]: parentChar } = PARENT_DELIMITER_CHARS;
@@ -268,12 +373,19 @@ function computeMasqueradeDelimiter(node: DelimitedBlockNode): string {
   return computeDelimiter(node.content, masqChar);
 }
 
-// Prints a delimited leaf block: delimiter, content lines
-// (verbatim), delimiter. Content is not reflowed — it's
-// preserved exactly. The delimiter length is computed by
-// `computeDelimiter` to avoid conflicts with content.
-// For indented literal paragraphs (form: "indented"), the
-// content lines are printed verbatim without delimiters.
+/**
+ * Prints a delimited leaf block to Doc IR.
+ *
+ * Produces delimiter, content lines (verbatim), delimiter.
+ * Content is not reflowed — it is preserved exactly. The
+ * delimiter length is computed by
+ * {@link computeDelimiter} to avoid conflicts with
+ * content. Indented literal paragraphs (form: "indented")
+ * and paragraph-form blocks are printed verbatim without
+ * delimiters.
+ * @param node - The delimited block AST node.
+ * @returns Doc IR for the formatted block.
+ */
 function printDelimitedBlock(node: DelimitedBlockNode): Doc {
   // Indented literal paragraphs and paragraph-form blocks: print
   // content verbatim without delimiters. The preceding attribute
@@ -328,11 +440,23 @@ const PARENT_DELIMITER_CHARS: Record<ParentBlockNode["variant"], string> = {
 // Open block delimiter is always exactly 2 dashes.
 const OPEN_BLOCK_DELIMITER_LENGTH = 2;
 
-// Recursively finds the maximum delimiter length used by any
-// descendant parent block with the given variant. Searches
-// through ALL children — not just same-variant — because a
-// quote block inside a sidebar inside a quote still produces
-// `____` delimiters within the outer quote's formatted output.
+/**
+ * Recursively finds the maximum delimiter length used by
+ * any descendant parent block with the given variant.
+ *
+ * Searches through ALL children — not just same-variant
+ * — because a quote block inside a sidebar inside a quote
+ * still produces `____` delimiters within the outer
+ * quote's formatted output. Without this, nested
+ * same-type blocks would normalize to identical delimiter
+ * lengths and collapse on re-parse.
+ * @param variant - The parent-block variant whose
+ *   delimiter length to track.
+ * @param children - The child block nodes to recurse
+ *   into.
+ * @returns The longest same-variant delimiter found
+ *   among descendants, or 0 if none exist.
+ */
 function maxDescendantDelimiter(
   variant: ParentBlockNode["variant"],
   children: readonly BlockNode[],
@@ -378,6 +502,21 @@ function maxDescendantDelimiter(
   return max;
 }
 
+/**
+ * Prints a parent (structural) block to Doc IR.
+ *
+ * Parent blocks contain other blocks as children and are
+ * fenced by delimiter lines (e.g. `====` for example
+ * blocks, `--` for open blocks). The delimiter length
+ * is computed to be longer than any same-variant nested
+ * descendant, preserving the nesting structure on
+ * re-parse.
+ * @param node - The parent block AST node.
+ * @param path - Prettier's AST path, used to recurse
+ *   into children via `path.map(print, "children")`.
+ * @param print - Prettier's recursive print callback.
+ * @returns Doc IR for the formatted parent block.
+ */
 function printParentBlock(
   node: ParentBlockNode,
   path: PrintPath,
@@ -429,15 +568,24 @@ function printParentBlock(
   return [delimiter, hardline, delimiter];
 }
 
-// Prints an admonition node to Doc IR.
-//
-// Paragraph-form admonitions: `NOTE: text` — the label prefix is
-// followed by reflowed text using fill() (same as paragraphs).
-//
-// Delimited-form admonitions: printed as the parent block
-// delimiters wrapping the children. The `[NOTE]` attribute list
-// that precedes the block is a separate metadata node handled by
-// the stacking behavior in joinBlocks.
+/**
+ * Prints an admonition node to Doc IR.
+ *
+ * Paragraph-form admonitions (`NOTE: text`) produce a
+ * label prefix followed by reflowed text using fill()
+ * (same as paragraphs).
+ *
+ * Delimited-form admonitions are printed as parent block
+ * delimiters wrapping the children. The `[NOTE]`
+ * attribute list that precedes the block is a separate
+ * metadata node handled by the stacking behavior in
+ * {@link joinBlocks}.
+ * @param node - The admonition AST node.
+ * @param path - Prettier's AST path, used to recurse
+ *   into children for delimited-form admonitions.
+ * @param print - Prettier's recursive print callback.
+ * @returns Doc IR for the formatted admonition.
+ */
 function printAdmonition(
   node: AdmonitionNode,
   path: PrintPath,
@@ -496,7 +644,24 @@ function printAdmonition(
   return [delimiter, hardline, delimiter];
 }
 
-// Prints an attribute entry node to Doc IR.
+/**
+ * Prints an attribute entry node to Doc IR.
+ *
+ * Produces the canonical `:name: value` form, handling
+ * the three attribute-unset syntaxes: prefix bang
+ * (`:!name:`), suffix bang (`:name!:`), and no bang
+ * (attribute set, with or without a value).
+ * @param node - The attribute entry node.
+ * @param node.name - The attribute name (without
+ *   surrounding colons).
+ * @param node.value - The attribute value, or undefined
+ *   for no-value entries (`:name:`) and unset entries.
+ * @param node.unset - How the attribute is unset:
+ *   "prefix" for `:!name:`, "suffix" for `:name!:`,
+ *   or false when the attribute is being set (with or
+ *   without a value).
+ * @returns Doc IR for the formatted attribute entry.
+ */
 function printAttributeEntry(node: {
   name: string;
   value: string | undefined;
@@ -520,18 +685,37 @@ type AnyNode = DocumentNode | BlockNode | InlineNode | ListItemNode;
 type PrintPath = AstPath<AnyNode>;
 type PrintFunction = (path: PrintPath) => Doc;
 
-// Prints a list node: each item separated by a hard line break.
-// Items at different depths are handled by the nested ListNode
-// structure — each ListItemNode prints its own nested children.
+/**
+ * Prints a list node: items separated by hard line
+ * breaks.
+ *
+ * Items at different depths are handled by the nested
+ * ListNode structure — each ListItemNode prints its own
+ * nested children recursively.
+ * @param path - Prettier's AST path, used to recurse
+ *   into list items via `path.map(print, "children")`.
+ * @param print - Prettier's recursive print callback.
+ * @returns Doc IR for the formatted list.
+ */
 function printList(path: PrintPath, print: PrintFunction): Doc {
   // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
   const items = path.map(print, "children");
   return join(hardline, items);
 }
 
-// Builds the marker string for a list item based on the parent
-// list's variant. Callout lists use `<N>` or `<.>` markers;
-// ordered lists use dots; unordered lists use asterisks.
+/**
+ * Builds the marker string for a list item based on the
+ * parent list's variant.
+ *
+ * Callout lists use `<N>` or `<.>` markers; ordered
+ * lists use dots; unordered lists use asterisks. The
+ * marker depth (number of repeated characters) encodes
+ * the nesting level.
+ * @param node - The list item whose marker to build.
+ * @param parentList - The parent list node, used to
+ *   determine the variant (ordered, unordered, callout).
+ * @returns The marker string (e.g. `**`, `...`, `<1>`).
+ */
 function buildMarker(
   node: ListItemNode,
   parentList: ListNode | undefined,
@@ -546,6 +730,18 @@ function buildMarker(
   return markerChar.repeat(node.depth);
 }
 
+/**
+ * Formats a checklist checkbox into its canonical string
+ * representation.
+ *
+ * Normalizes `[*]` to `[x]` (the canonical checked
+ * form). Returns an empty string for non-checklist items
+ * so the caller can unconditionally prepend the result.
+ * @param checkbox - The checkbox state: "checked",
+ *   "unchecked", or undefined for non-checklist items.
+ * @returns The checkbox prefix string, or empty string
+ *   if the item has no checkbox.
+ */
 function formatCheckbox(checkbox: ListItemNode["checkbox"]): string {
   if (checkbox === "checked") {
     return "[x] ";
@@ -556,9 +752,20 @@ function formatCheckbox(checkbox: ListItemNode["checkbox"]): string {
   return "";
 }
 
-// Prints a single list item: marker + space + text content,
-// with text reflowed via fill. Nested lists appear on the next
-// line after the item text.
+/**
+ * Prints a single list item to Doc IR.
+ *
+ * Produces marker + space + text content, with text
+ * reflowed via fill(). Continuation lines are aligned
+ * to the text start (past the marker). Nested lists
+ * appear on the next line after the item text, outside
+ * the fill.
+ * @param node - The list item AST node.
+ * @param path - Prettier's AST path, used to recurse
+ *   into children and access the parent list node.
+ * @param print - Prettier's recursive print callback.
+ * @returns Doc IR for the formatted list item.
+ */
 function printListItem(
   node: ListItemNode,
   path: PrintPath,
@@ -583,31 +790,40 @@ function printListItem(
   // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
   const printed = path.map(print, "children");
 
-  // Build the output by walking AST children and their
-  // corresponding printed Doc IR in parallel.
-  //
-  // The flatMap produces a Doc array shaped like:
-  //   [fill(marker, " ", ...words...), hardline, nestedListDoc]
-  // where the fill handles text reflow and any nested list
-  // follows on its own line after a hardline break.
-  return node.children.flatMap((child, index) => {
+  // Separate inline children (text, bold, hardLineBreak, etc.)
+  // from nested lists. Inline children are reflowed inside a
+  // fill(); nested lists follow on their own lines.
+  const inlineParts: Doc[] = [];
+  const nestedListParts: Doc[] = [];
+
+  for (const [index, child] of node.children.entries()) {
     const { [index]: printedChild } = printed;
-    if (child.type === "text") {
-      // Reflow item text using fill, same as paragraphs. The
-      // printed text node is an array of words interleaved with
-      // `line`; we prepend the marker and flatten into fill().
-      // Wrap in align() so continuation lines are indented to
-      // align with the text start (after the marker + space).
-      const flatText = Array.isArray(printedChild)
+    if (child.type === "list") {
+      // Nested list: appears on the next line after a
+      // hardline break, outside the fill.
+      nestedListParts.push(hardline, printedChild);
+    } else {
+      // Inline node: collect into parts for fill(). The
+      // printed inline node is either a Doc[] (text words
+      // interleaved with `line`) or a single Doc (marks,
+      // hard line breaks, etc.).
+      const flat = Array.isArray(printedChild)
         ? (printedChild as Doc[])
         : [printedChild];
-      return [
-        fill([marker, " ", checkboxPrefix, align(markerWidth, fill(flatText))]),
-      ];
+      inlineParts.push(...flat);
     }
-    // Nested list: appears on the next line.
-    return [hardline, printedChild];
-  });
+  }
+
+  // Build the output: marker + space + checkbox + aligned
+  // fill of inline content, followed by any nested lists.
+  const item = fill([
+    marker,
+    " ",
+    checkboxPrefix,
+    align(markerWidth, fill(inlineParts)),
+  ]);
+
+  return [item, ...nestedListParts];
 }
 
 const printer: Printer<AnyNode> = {
@@ -618,12 +834,8 @@ const printer: Printer<AnyNode> = {
       case "document": {
         // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
         const children = path.map(print, "children");
-        // Filter out whitespace-only paragraphs — they're
-        // artifacts of source formatting that would otherwise
-        // produce spurious blank lines in the output.
-        const { blocks, printed } = filterBlocks(node.children, children);
-        if (blocks.length > EMPTY) {
-          return [joinBlocks(blocks, printed), hardline];
+        if (node.children.length > EMPTY) {
+          return [joinBlocks(node.children, children), hardline];
         }
         return "";
       }
@@ -636,16 +848,12 @@ const printer: Printer<AnyNode> = {
         if (node.children.length > EMPTY) {
           // eslint-disable-next-line unicorn/no-array-callback-reference, unicorn/no-array-method-this-argument -- AstPath#map, not Array#map
           const sectionChildren = path.map(print, "children");
-          const { blocks: sectionBlocks, printed: sectionPrinted } =
-            filterBlocks(node.children, sectionChildren);
-          if (sectionBlocks.length > EMPTY) {
-            return [
-              headingContent,
-              hardline,
-              hardline,
-              joinBlocks(sectionBlocks, sectionPrinted),
-            ];
-          }
+          return [
+            headingContent,
+            hardline,
+            hardline,
+            joinBlocks(node.children, sectionChildren),
+          ];
         }
         return headingContent;
       }
@@ -661,11 +869,6 @@ const printer: Printer<AnyNode> = {
       }
       case "blockAttributeList": {
         return ["[", node.value, "]"];
-      }
-      case "blockAnchor": {
-        return node.reftext === undefined
-          ? ["[[", node.id, "]]"]
-          : ["[[", node.id, ", ", node.reftext, "]]"];
       }
       case "blockTitle": {
         return [".", node.title];
@@ -706,7 +909,17 @@ const printer: Printer<AnyNode> = {
       case "italic":
       case "monospace":
       case "highlight":
-      case "attributeReference": {
+      case "attributeReference":
+      case "link":
+      case "xref":
+      case "inlineAnchor":
+      case "inlineImage":
+      case "kbd":
+      case "btn":
+      case "menu":
+      case "footnote":
+      case "passthrough":
+      case "hardLineBreak": {
         return printInlineNode(node, path, print);
       }
     }

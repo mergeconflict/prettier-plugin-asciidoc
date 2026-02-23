@@ -7,17 +7,27 @@
  * - `[verse]` on `____` → verbatim (line breaks preserved)
  * - `[source]`/`[listing]`/`[literal]` on `--` → verbatim
  * - `[stem]`/`[latexmath]`/`[asciimath]` on `____` → verbatim
- * - `[NOTE]`/`[TIP]` on `====` → admonition (already handled)
+ *
+ * Admonition handling (`[NOTE]`/`[TIP]` on `====`) is a
+ * separate transformation (not masquerade) and is tested in
+ * admonition.test.ts.
  *
  * Masquerades that don't change the content model (e.g.
- * `[source]` on `----`, `[quote]` on `--`) are not tested here
- * because they don't affect formatting behavior.
+ * `[source]` on `----`, `[quote]` on `--`) are not tested
+ * here because they don't affect formatting behavior.
  */
 import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { DelimitedBlockNode, ParentBlockNode } from "../../src/ast.js";
 
-// Helper to extract a delimited block at a given index.
+/**
+ * Extracts the child at the given index as a
+ * DelimitedBlockNode. Throws if the node type does not
+ * match, catching test setup errors early.
+ * @param children - parsed document children array
+ * @param index - position of the expected delimited block
+ * @returns the child narrowed to DelimitedBlockNode
+ */
 function delimitedBlockAt(
   children: ReturnType<typeof parse>["children"],
   index: number,
@@ -31,7 +41,14 @@ function delimitedBlockAt(
   return block;
 }
 
-// Helper to extract a parent block at a given index.
+/**
+ * Extracts the child at the given index as a
+ * ParentBlockNode. Throws if the node type does not
+ * match, catching test setup errors early.
+ * @param children - parsed document children array
+ * @param index - position of the expected parent block
+ * @returns the child narrowed to ParentBlockNode
+ */
 function parentBlockAt(
   children: ReturnType<typeof parse>["children"],
   index: number,
@@ -97,7 +114,13 @@ describe("[source]/[listing]/[literal] on open block (--)", () => {
     expect(block.content).toBe("puts 'hello'");
   });
 
-  test("[source,ruby] on open block preserves language context", () => {
+  test("[source,ruby] extra positional attribute still triggers masquerade", () => {
+    // The `ruby` language hint is a second positional attribute.
+    // `extractStyle` takes only the first token before the comma,
+    // so `[source,ruby]` resolves to style "source" and triggers
+    // the same masquerade as plain `[source]`. The `language`
+    // field is NOT populated here — that field is only set by
+    // fenced-code syntax (```lang), not by attribute lists.
     const { children } = parse("[source,ruby]\n--\nputs 'hello'\n--\n");
     expect(children).toHaveLength(2);
     const block = delimitedBlockAt(children, 1);
@@ -132,6 +155,10 @@ describe("[comment]/[pass]/[verse] on open block (--)", () => {
   });
 
   test("[comment] on open block produces verbatim pass block", () => {
+    // `[comment]` maps to the `pass` variant rather than a
+    // dedicated `comment` variant. Both represent content the
+    // renderer suppresses entirely. Re-using `pass` avoids
+    // adding a variant that behaves identically in the printer.
     const { children } = parse("[comment]\n--\nThis is hidden.\n--\n");
     expect(children).toHaveLength(2);
     const block = delimitedBlockAt(children, 1);
@@ -150,6 +177,10 @@ describe("[comment]/[pass]/[verse] on open block (--)", () => {
   });
 });
 
+// Stem styles (`[stem]`, `[latexmath]`, `[asciimath]`) masquerade
+// a quote block as `variant: "pass"`. The pass variant means the
+// printer emits the content verbatim without inline substitutions —
+// correct for math notation where `^`, `_`, and `\` are literal.
 describe("[stem]/[latexmath]/[asciimath] on quote block (____)", () => {
   test("[stem] on quote block produces verbatim block", () => {
     const { children } = parse("[stem]\n____\nx = y^2\n____\n");

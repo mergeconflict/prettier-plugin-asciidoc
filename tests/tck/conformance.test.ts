@@ -2,14 +2,10 @@
  * TCK (Technology Compatibility Kit) conformance tests.
  *
  * These tests parse vendored AsciiDoc input files with our
- * parser, convert the AST to ASG format using toASG(), and
- * compare against the official expected output JSON files from
- * the asciidoc-tck repository.
- *
- * Fixtures requiring unimplemented constructs are catalogued as
- * `test.todo` with a comment noting which task will address
- * them. As features are implemented, these should be promoted
- * to real tests (turning red then green is the TDD loop).
+ * parser and compare the result against official expected
+ * output JSON files from the asciidoc-tck repository.
+ * Block-level fixtures use toASG() (full document); inline
+ * fixtures use toASGInlines() (bare inlines array).
  */
 
 import { describe, expect, test } from "vitest";
@@ -24,36 +20,60 @@ const TCK_ROOT = path.resolve(
   "../../vendor/asciidoc-tck/tests",
 );
 
+/**
+ * Reads a TCK fixture file relative to the vendored
+ * test root directory.
+ * @param relativePath - path relative to the TCK root
+ * @returns the file contents as a UTF-8 string
+ */
 function readFixture(relativePath: string): string {
   return readFileSync(path.resolve(TCK_ROOT, relativePath), "utf8");
 }
 
+/**
+ * Reads and JSON-parses a TCK expected-output file.
+ * @param relativePath - path relative to the TCK root
+ * @returns the parsed JSON value
+ */
 function readExpected(relativePath: string): unknown {
   return JSON.parse(readFixture(relativePath)) as unknown;
 }
 
-// Parses input and converts to ASG, then compares against the
-// expected TCK output. The fixture path is relative to the TCK
-// root and excludes the -input.adoc / -output.json suffixes.
+/**
+ * Parses input and converts to ASG, then compares against
+ * the expected TCK output. The fixture path is relative to
+ * the TCK root and excludes the -input.adoc / -output.json
+ * suffixes.
+ * @param fixturePath - TCK fixture path without suffix
+ */
 function expectTCK(fixturePath: string): void {
   const input = readFixture(`${fixturePath}-input.adoc`);
   const expected = readExpected(`${fixturePath}-output.json`);
   const document = parse(input);
+  // structuredClone produces a plain object so toStrictEqual
+  // compares by value, not by reference or prototype.
   const actual = structuredClone(toASG(document));
   expect(actual).toStrictEqual(expected);
 }
 
-// Inline-only variant: parses the first paragraph's inlines
-// and compares against the expected inlines array (inline TCK
-// fixtures return a bare array, not a document wrapper).
+/**
+ * Inline-only variant of expectTCK: parses the first
+ * paragraph's inlines and compares against the expected
+ * inlines array (inline TCK fixtures return a bare array,
+ * not a document wrapper).
+ * @param fixturePath - TCK fixture path without suffix
+ */
 function expectTCKInlines(fixturePath: string): void {
   const input = readFixture(`${fixturePath}-input.adoc`);
   const expected = readExpected(`${fixturePath}-output.json`);
   const { children } = parse(input);
   const [paragraph] = children;
+  // Inline TCK fixtures always wrap their content in a single
+  // paragraph — if this throws, the fixture file is malformed.
   if (paragraph.type !== "paragraph") {
     throw new Error(`Expected paragraph, got ${paragraph.type}`);
   }
+  // structuredClone for the same reason as in expectTCK.
   const actual = structuredClone(toASGInlines(paragraph.children));
   expect(actual).toStrictEqual(expected);
 }
@@ -163,11 +183,8 @@ describe("TCK conformance: inline/no-markup", () => {
 // Expected failures: constructs not yet implemented
 // ---------------------------------------------------------------
 
-describe("TCK conformance: expected failures", () => {
-  // Constrained strong markup (`*s*`) requires the inline
-  // parser to recognize formatting spans. Not yet implemented.
-  test.todo(
-    "inline/span/strong/constrained-single-char" +
-      " — requires inline formatting (Tasks 14-16)",
-  );
+describe("TCK conformance: inline/span", () => {
+  test("strong/constrained-single-char", () => {
+    expectTCKInlines("inline/span/strong/constrained-single-char");
+  });
 });

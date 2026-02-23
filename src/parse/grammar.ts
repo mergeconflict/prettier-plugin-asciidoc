@@ -89,10 +89,16 @@ import {
   OrderedListMarker,
   CalloutListMarker,
   VerbatimContent,
-  BlockAnchor,
   BlockAttributeList,
   BlockTitle,
   AdmonitionMarker,
+  InlineUrl,
+  LinkMacro,
+  MailtoLink,
+  XrefMacro,
+  XrefShorthand,
+  InlineAnchor,
+  HardLineBreak,
 } from "./tokens.js";
 import { LOOKAHEAD, LOOKAHEAD_2 } from "../constants.js";
 
@@ -144,7 +150,6 @@ export class AsciidocParser extends CstParser {
       { ALT: () => this.CONSUME(SectionMarker) },
       { ALT: () => this.CONSUME(DocumentTitle) },
       { ALT: () => this.CONSUME(LineComment) },
-      { ALT: () => this.CONSUME(BlockAnchor) },
       { ALT: () => this.CONSUME(BlockAttributeList) },
       { ALT: () => this.CONSUME(BlockTitle) },
       { ALT: () => this.CONSUME(ThematicBreak) },
@@ -545,6 +550,15 @@ export class AsciidocParser extends CstParser {
       { ALT: () => this.CONSUME(RoleAttribute) },
       { ALT: () => this.CONSUME(AttributeReference) },
       { ALT: () => this.CONSUME(BackslashEscape) },
+      // Link / xref / anchor tokens — each is self-contained
+      // (the full construct is a single token).
+      { ALT: () => this.CONSUME(InlineUrl) },
+      { ALT: () => this.CONSUME(LinkMacro) },
+      { ALT: () => this.CONSUME(MailtoLink) },
+      { ALT: () => this.CONSUME(XrefMacro) },
+      { ALT: () => this.CONSUME(XrefShorthand) },
+      { ALT: () => this.CONSUME(InlineAnchor) },
+      { ALT: () => this.CONSUME(HardLineBreak) },
       { ALT: () => this.CONSUME(InlineText) },
       { ALT: () => this.CONSUME(InlineChar) },
     ]);

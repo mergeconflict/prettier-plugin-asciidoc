@@ -109,8 +109,9 @@ describe("paragraph-form block context formatting", () => {
     expect(await formatAdoc(input)).toBe(input);
   });
 
-  // Anchor + attribute list + paragraph-form block.
-  test("anchor + [source] + content stacks", async () => {
+  // Anchor paragraph stacks with following metadata ([source]
+  // attribute list), which stacks with the content.
+  test("anchor + [source] + content", async () => {
     const input = "[[my-id]]\n[source]\nsome code\n";
     expect(await formatAdoc(input)).toBe(input);
   });

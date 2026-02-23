@@ -14,8 +14,10 @@ export const EMPTY = 0;
 // First element of an array: `tokens[FIRST]`.
 export const FIRST = 0;
 
-// Section level 0 uses "==" (2 equals signs), so the marker character
-// count minus MARKER_OFFSET gives the section level.
+// AsciiDoc section levels are 0-based, but marker strings start at 2
+// characters ("==" for level 0). MARKER_OFFSET bridges the two:
+// - parsing:  level = markers.length - MARKER_OFFSET
+// - printing: marker = "=".repeat(level + MARKER_OFFSET)
 export const MARKER_OFFSET = 1;
 
 // Last element: array.at(LAST_ELEMENT)
@@ -23,6 +25,10 @@ export const LAST_ELEMENT = -1;
 
 // Offset to the next element in a sequential scan.
 export const NEXT = 1;
+
+// Width of single-character delimiters stripped via
+// slice(DELIM_WIDTH, -DELIM_WIDTH), e.g. `{attr}` or `[role]`.
+export const DELIM_WIDTH = 1;
 
 // Two adjacent nodes that form a logical pair (e.g. an attribute
 // list followed by the block it annotates).

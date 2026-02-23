@@ -74,7 +74,6 @@ Our AST is designed for Prettier, not for the AsciiDoc ASG spec. It preserves ev
 - `comment` — line (`//`) and block (`////`)
 - `includeDirective` — `include::path[]`
 - `conditionalDirective` — `ifdef`, `ifndef`, `ifeval`, `endif`
-- `blockAnchor` — `[[id]]` or `[[id, reftext]]`
 - `blockAttributeList` — `[source,ruby]`, `[#id.role%option]`
 
 **Inline nodes:**
@@ -82,6 +81,7 @@ Our AST is designed for Prettier, not for the AsciiDoc ASG spec. It preserves ev
 - `text` — plain text
 - `bold`, `italic`, `monospace`, `highlight` — constrained and unconstrained forms
 - `superscript`, `subscript`
+- `inlineAnchor` — `[[id]]` or `[[id, reftext]]` (standalone on a line acts as block metadata)
 - `link`, `xref` — references
 - `inlineMacro` — `image:`, `kbd:`, `btn:`, `menu:`, `footnote:`, etc.
 - `inlinePassthrough` — `+text+`, `pass:[]`
@@ -245,12 +245,12 @@ These matchers are substantial enough to warrant their own file
 (`src/parse/inline-mark-pattern.ts`) but they register as token
 definitions in the `inline` lexer mode — they're not a separate
 lexer. The AST building logic that pairs formatting marks into
-nested spans lives in `src/parse/inline-builder.ts`.
+nested spans lives in `src/parse/inline-node-builder.ts`.
 
 ### What stays in separate files
 
 The custom inline mark patterns (`src/parse/inline-mark-pattern.ts`)
-and the inline AST builder (`src/parse/inline-builder.ts`) live in
+and the inline AST builder (`src/parse/inline-node-builder.ts`) live in
 their own files because they are substantial. The inline grammar
 rules live in `src/parse/grammar.ts` alongside the block-level
 rules — they're methods on the same parser class. "Separate files"

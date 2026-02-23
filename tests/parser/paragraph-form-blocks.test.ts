@@ -15,7 +15,14 @@ import { describe, test, expect } from "vitest";
 import { parse } from "../../src/parser.js";
 import type { DelimitedBlockNode } from "../../src/ast.js";
 
-// Helper to extract the delimited block at a given index.
+/**
+ * Extracts the child at the given index as a
+ * DelimitedBlockNode. Throws if the node type does not
+ * match, catching test setup errors early.
+ * @param children - parsed document children array
+ * @param index - position of the expected delimited block
+ * @returns the child narrowed to DelimitedBlockNode
+ */
 function delimitedBlockAt(
   children: ReturnType<typeof parse>["children"],
   index: number,
@@ -53,10 +60,11 @@ describe("paragraph-form source/listing blocks", () => {
   });
 
   // [listing] + paragraph → listing block, paragraph form.
-  // Note: paragraph-form blocks use the default lexer mode, so
-  // indented lines are tokenized separately. Content here must
-  // be non-indented text (indented code belongs in a delimited
-  // block with ---- delimiters).
+  // Paragraph-form blocks consume only the immediately following
+  // paragraph. Indented lines are tokenized as a separate literal
+  // paragraph node (not absorbed into the preceding paragraph), so
+  // paragraph-form block content must be non-indented. Indented
+  // code should use a fenced block with ---- delimiters instead.
   test("[listing] + paragraph produces listing block", () => {
     const { children } = parse("[listing]\ndef foo\nbar\nend\n");
     expect(children).toHaveLength(2);
@@ -115,8 +123,10 @@ describe("paragraph-form verse blocks", () => {
     expect(block.content).toBe("Roses are red,\nViolets are blue.");
   });
 
-  // [verse] with attribution.
-  test("[verse, Author, Source] parses attribution in attr list", () => {
+  // [verse] with attribution positional attributes — the extra
+  // parameters are carried in the attribute list node; the block
+  // variant and content are unaffected.
+  test("[verse, Author, Source] produces verse block", () => {
     const { children } = parse(
       "[verse, Robert Frost, Fire and Ice]\nSome say the world will end in fire,\nSome say in ice.\n",
     );
@@ -143,8 +153,10 @@ describe("paragraph-form quote blocks", () => {
     expect(block.content).toBe("To be or not to be.");
   });
 
-  // [quote] with attribution.
-  test("[quote, Author, Source] with attribution", () => {
+  // [quote] with attribution positional attributes — the extra
+  // parameters are carried in the attribute list node; the block
+  // variant and content are unaffected.
+  test("[quote, Author, Source] produces quote block", () => {
     const { children } = parse(
       "[quote, Shakespeare, Hamlet]\nTo be or not to be.\n",
     );
@@ -217,8 +229,9 @@ describe("paragraph-form block boundaries", () => {
     expect(block.form).toBe("paragraph");
   });
 
-  // Case insensitivity: AsciiDoc styles are case-insensitive
-  // but conventionally lowercase. We only match lowercase.
+  // Case sensitivity: the PARAGRAPH_FORM_STYLES lookup uses exact
+  // lowercase keys, so style matching is case-sensitive. [SOURCE]
+  // misses the table and the paragraph is left as-is.
   test("uppercase [SOURCE] is NOT a paragraph-form block", () => {
     const { children } = parse("[SOURCE]\nsome code\n");
     // Should parse as attribute list + paragraph.

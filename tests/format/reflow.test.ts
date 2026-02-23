@@ -184,16 +184,6 @@ describe("paragraph reflow", () => {
     }
   });
 
-  // Block anchor `[[id]]` at line start would be re-parsed as
-  // an anchor definition.
-  test("reflow prevents block anchor at line start", async () => {
-    const input = "see the [[myid]] reference\n";
-    const result = await formatAdoc(input, { printWidth: 10 });
-    for (const line of result.split("\n")) {
-      expect(line).not.toMatch(/^\[\[/v);
-    }
-  });
-
   // Callout list marker `<1>` at line start would be re-parsed
   // as a callout list item.
   test("reflow prevents callout marker at line start", async () => {
@@ -202,5 +192,27 @@ describe("paragraph reflow", () => {
     for (const line of result.split("\n")) {
       expect(line).not.toMatch(/^<\d/v);
     }
+  });
+
+  // A list item with an indented continuation line containing
+  // just `+` must not produce ` +\n` at end of line after
+  // reflow — that would be re-parsed as a hard line break.
+  // The `+` enters the text value via IndentedLine (not inline
+  // mode), so HardLineBreak doesn't consume it during lexing.
+  test("reflow does not place + at end of line in list item", async () => {
+    const input = ". item\n +\n";
+    const result = await formatAdoc(input);
+    for (const outputLine of result.split("\n")) {
+      expect(outputLine).not.toMatch(/ \+$/v);
+    }
+  });
+
+  // The fuzz counterexample: formatting must be idempotent
+  // even when reflow could create an accidental hard line break.
+  test("reflow with + continuation line is idempotent", async () => {
+    const input = ". item\n +\n// c\n";
+    const first = await formatAdoc(input);
+    const second = await formatAdoc(first);
+    expect(second).toBe(first);
   });
 });

@@ -21,13 +21,34 @@
  * being parsed as headings, paragraphs, or other AsciiDoc constructs.
  */
 import { createToken, Lexer } from "chevrotain";
-import type {
-  CustomPatternMatcherFunc,
-  CustomPatternMatcherReturn,
-  IToken,
-} from "chevrotain";
-import { EMPTY, MIN_DELIMITER_LENGTH, NEXT } from "../constants.js";
+import type { CustomPatternMatcherReturn } from "chevrotain";
+import { NEXT } from "../constants.js";
+import {
+  makeClosePattern,
+  makeParentClosePattern,
+} from "./delimiter-patterns.js";
 import { makeInlineMarkPattern } from "./inline-mark-pattern.js";
+import {
+  HardLineBreak,
+  InlineImage,
+  KbdMacro,
+  ButtonMacro,
+  MenuMacro,
+  FootnoteMacro,
+  FootnoteReferenceMacro,
+  PassMacro,
+} from "./inline-macro-tokens.js";
+// Re-export inline macro tokens (defined in a separate file to stay within the max-lines limit).
+export {
+  HardLineBreak,
+  InlineImage,
+  KbdMacro,
+  ButtonMacro,
+  MenuMacro,
+  FootnoteMacro,
+  FootnoteReferenceMacro,
+  PassMacro,
+} from "./inline-macro-tokens.js";
 
 /**
  * One or more empty/whitespace-only lines. Matches a newline
@@ -273,124 +294,6 @@ export const BlockCommentContent = createToken({
   pattern: /[^\n]+/,
 });
 
-// AsciiDoc requires closing delimiters to be the same character
-// AND the same length as the opening delimiter. A `----` must not
-// close a `------` block. These custom pattern matchers look back
-// through the token array to find the matching open delimiter and
-// compare lengths.
-
-/**
- * Build a custom Chevrotain token pattern that only matches a
- * closing delimiter when its length equals the corresponding
- * opening delimiter.
- *
- * @param delimiterChar - Single character (e.g. "-", ".", "+")
- * @param openTokenName - Name of the opening token to match
- *   against (e.g. "ListingBlockOpen")
- */
-function makeClosePattern(
-  delimiterChar: string,
-  openTokenName: string,
-): { exec: CustomPatternMatcherFunc } {
-  // The negative lookahead (?![^\n]) ensures the delimiter
-  // must be the entire line content (followed by newline or
-  // EOF). Without this, `....x` inside a `....`-delimited
-  // literal block would match `....` as a close delimiter,
-  // leaving `x` as stray text — breaking idempotency.
-  const regex = new RegExp(
-    `\\${delimiterChar}{${MIN_DELIMITER_LENGTH},}(?![^\\n])`,
-  );
-
-  return {
-    exec: (
-      text: string,
-      offset: number,
-      tokens: IToken[],
-      _groups: Record<string, IToken[]>,
-    ): CustomPatternMatcherReturn | null => {
-      const match = regex.exec(text.slice(offset));
-      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null for no-match
-      if (match?.index !== EMPTY) return null;
-
-      // Walk backwards through all previously lexed tokens
-      // to find the most recent open delimiter for this block
-      // type. The tokens array is shared across all modes.
-      const openToken = tokens.findLast(
-        (token) => token.tokenType.name === openTokenName,
-      );
-      const openLength = openToken?.image.length ?? EMPTY;
-
-      // Only match if the close delimiter is exactly the same
-      // length as the opening delimiter.
-      const [matched] = match;
-      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null for no-match
-      if (matched.length !== openLength) return null;
-
-      const result: CustomPatternMatcherReturn = [matched];
-      return result;
-    },
-  };
-}
-
-// Parent block close matcher. Unlike leaf blocks (which can't
-// nest), parent blocks of the same type can nest with different
-// delimiter lengths (e.g., outer `======`, inner `====`). The
-// matcher must find the most recent *unmatched* open token --
-// skipping opens that already have a matching close -- to get
-// the correct delimiter length for comparison.
-function makeParentClosePattern(
-  delimiterChar: string,
-  openTokenName: string,
-  closeTokenName: string,
-): { exec: CustomPatternMatcherFunc } {
-  const regex = new RegExp(
-    `\\${delimiterChar}{${MIN_DELIMITER_LENGTH},}(?![^\\n])`,
-  );
-
-  return {
-    exec: (
-      text: string,
-      offset: number,
-      tokens: IToken[],
-      _groups: Record<string, IToken[]>,
-    ): CustomPatternMatcherReturn | null => {
-      const match = regex.exec(text.slice(offset));
-      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
-      if (match?.index !== EMPTY) return null;
-
-      // Walk backwards through all previously lexed tokens.
-      // Track nesting: each close we encounter means one more
-      // open we need to skip before finding our target open.
-      let depth = EMPTY;
-      let openLength = EMPTY;
-      for (let index = tokens.length - NEXT; index >= EMPTY; index -= NEXT) {
-        // eslint-disable-next-line @typescript-eslint/prefer-destructuring -- variable index
-        const {
-          tokenType: { name: tokenName },
-          image,
-        } = tokens[index];
-        if (tokenName === closeTokenName) {
-          depth += NEXT;
-        } else if (tokenName === openTokenName) {
-          if (depth === EMPTY) {
-            // This open has no matching close -- it's ours.
-            ({ length: openLength } = image);
-            break;
-          }
-          depth -= NEXT;
-        }
-      }
-
-      const [matched] = match;
-      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
-      if (matched.length !== openLength) return null;
-
-      const result: CustomPatternMatcherReturn = [matched];
-      return result;
-    },
-  };
-}
-
 /**
  * Closing delimiter for listing blocks inside listing_verbatim
  * mode. Pops back to default mode. Uses a custom pattern to
@@ -480,25 +383,10 @@ export const AttributeEntry = createToken({
 });
 
 /**
- * Block anchor: `[[anchor-id]]` or `[[id,reftext]]` on its own
- * line. Double square brackets distinguish anchors from attribute
- * lists (`[...]`). Must precede BlockAttributeList so `[[` is
- * consumed as an anchor, not an attribute list starting with `[`.
- *
- * The trailing `(?![^\n])` ensures the closing `]]` is at end
- * of line — block anchors occupy a full line by themselves.
- */
-export const BlockAnchor = createToken({
-  name: "BlockAnchor",
-  pattern: /\[\[[^\]]+\]\](?![^\n])/,
-});
-
-/**
  * Block attribute list: `[source,ruby]`, `[#myid]`, `[.role]`,
  * `[start=7]`, etc. on its own line. Single square brackets.
  * Must precede InlineModeStart so attribute lists aren't consumed
- * as plain text. BlockAnchor (which starts with `[[`) must be
- * defined before this token.
+ * as plain text.
  *
  * The negative lookahead `(?!\[)` after the opening bracket
  * avoids consuming `[[anchor]]` as an attribute list. The
@@ -614,7 +502,21 @@ export const InlineModeStart = createToken({
     exec: (text: string, offset: number): CustomPatternMatcherReturn | null => {
       // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
       if (offset >= text.length || text[offset] === "\n") return null;
-      return [""] as CustomPatternMatcherReturn;
+      // Reject whitespace-only lines — scan forward to the next
+      // newline (or EOF) and require at least one non-whitespace
+      // character. This prevents whitespace-only paragraphs from
+      // ever being created, eliminating the need for printer-side
+      // filtering.
+      let scan = offset;
+      while (scan < text.length && text[scan] !== "\n") {
+        if (text[scan] !== " " && text[scan] !== "\t") {
+          return [""] as CustomPatternMatcherReturn;
+        }
+        scan += NEXT;
+      }
+      // Reached newline or EOF with only whitespace — reject.
+      // eslint-disable-next-line unicorn/no-null -- Chevrotain requires null
+      return null;
     },
   },
   push_mode: "inline",
@@ -648,6 +550,46 @@ export const AttributeReference = createToken({
 export const RoleAttribute = createToken({
   name: "RoleAttribute",
   pattern: /\[[^\]]+\](?=#)/,
+});
+
+// ── Inline link / xref / anchor tokens ──────────────────────
+// Must appear before InlineText in the inline mode array.
+
+/** Inline URL: `https://url` or `https://url[text]`. */
+export const InlineUrl = createToken({
+  name: "InlineUrl",
+  pattern: /https?:\/\/[^\s[\]]+(?:\[[^\]]*\])?/,
+  start_chars_hint: ["h"],
+});
+/** Link macro: `link:target[text]`. */
+export const LinkMacro = createToken({
+  name: "LinkMacro",
+  pattern: /link:[^\s[]+\[[^\]]*\]/,
+  start_chars_hint: ["l"],
+});
+/** Mailto link: `mailto:addr[text]`. */
+export const MailtoLink = createToken({
+  name: "MailtoLink",
+  pattern: /mailto:[^\s[]+\[[^\]]*\]/,
+  start_chars_hint: ["m"],
+});
+/** Xref macro: `xref:target[text]`. */
+export const XrefMacro = createToken({
+  name: "XrefMacro",
+  pattern: /xref:[^\s[]+\[[^\]]*\]/,
+  start_chars_hint: ["x"],
+});
+/** Xref shorthand: `<<target>>` or `<<target,text>>`. */
+export const XrefShorthand = createToken({
+  name: "XrefShorthand",
+  pattern: /<<[^>\n]+(?:,[^>\n]+)?>>/,
+  start_chars_hint: ["<"],
+});
+/** Inline anchor: `[[id]]` or `[[id, reftext]]`. */
+export const InlineAnchor = createToken({
+  name: "InlineAnchor",
+  pattern: /\[\[[^\]\n]+\]\]/,
+  start_chars_hint: ["["],
 });
 
 /** Bold formatting mark — `*` (constrained) or `**` (unconstrained). */
@@ -685,10 +627,21 @@ export const HighlightMark = createToken({
   start_chars_hint: ["#"],
 });
 
-/** Run of non-special characters in inline mode. */
+/**
+ * Run of non-special characters in inline mode. The negative
+ * lookaheads prevent consuming into URL/macro prefixes that
+ * the dedicated tokens should match instead. The `<` character
+ * is excluded so `<<ref>>` xref shorthand is not consumed as
+ * text. The ` +\n` negative lookahead prevents consuming
+ * the trailing space before a hard line break token. Note
+ * that `+` itself is NOT excluded from the character class
+ * because HardLineBreak uses this lookahead pattern — only
+ * the ` +\n` sequence is reserved, not bare `+`.
+ */
 export const InlineText = createToken({
   name: "InlineText",
-  pattern: /[^\n*_`#\\{[]+/,
+  pattern:
+    /(?:(?!https?:\/\/|link:|mailto:|xref:|image:|kbd:|btn:|menu:|footnote(?:ref)?:|pass:| \+\n)[^\n*_`#\\{[<])+/,
 });
 
 /**
@@ -743,7 +696,6 @@ const multiModeDefinition = {
       ThematicBreak,
       PageBreak,
       AttributeEntry,
-      BlockAnchor,
       BlockAttributeList,
       BlockTitle,
       AdmonitionMarker,
@@ -757,10 +709,26 @@ const multiModeDefinition = {
       BackslashEscape,
       AttributeReference,
       RoleAttribute,
+      // Link/xref/anchor tokens before formatting marks.
+      InlineUrl,
+      LinkMacro,
+      MailtoLink,
+      XrefMacro,
+      XrefShorthand,
+      InlineAnchor,
+      // Inline macro tokens before formatting marks.
+      InlineImage,
+      KbdMacro,
+      ButtonMacro,
+      MenuMacro,
+      FootnoteReferenceMacro,
+      FootnoteMacro, // ref before base (longer prefix)
+      PassMacro,
       BoldMark,
       ItalicMark,
       MonoMark,
       HighlightMark,
+      HardLineBreak, // before InlineNewline (` +\n` before `\n`)
       InlineNewline,
       InlineText,
       InlineChar, // single-char fallback, must be last
@@ -820,7 +788,6 @@ export const allTokens = [
   BlockCommentContent,
   VerbatimContent,
   AttributeEntry,
-  BlockAnchor,
   BlockAttributeList,
   BlockTitle,
   AdmonitionMarker,
@@ -829,10 +796,24 @@ export const allTokens = [
   CalloutListMarker,
   IndentedLine,
   InlineModeStart,
+  HardLineBreak,
   InlineNewline,
   BackslashEscape,
   AttributeReference,
   RoleAttribute,
+  InlineUrl,
+  LinkMacro,
+  MailtoLink,
+  XrefMacro,
+  XrefShorthand,
+  InlineAnchor,
+  InlineImage,
+  KbdMacro,
+  ButtonMacro,
+  MenuMacro,
+  FootnoteReferenceMacro,
+  FootnoteMacro,
+  PassMacro,
   BoldMark,
   ItalicMark,
   MonoMark,

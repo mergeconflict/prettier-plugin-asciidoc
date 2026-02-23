@@ -18,18 +18,33 @@ import { AstBuilder } from "./parse/ast-builder.js";
 import { unreachable } from "./unreachable.js";
 const astBuilder = new AstBuilder();
 
-// Prettier calls locStart/locEnd to determine node positions for cursor
-// tracking and range formatting. They must be top-level named exports.
+/**
+ * Return a node's start offset for Prettier's cursor
+ * tracking and range formatting.
+ * @param node - Any AST node with a position
+ * @returns Zero-based start offset in source text
+ */
 function locStart(node: BlockNode | DocumentNode): number {
   return node.position.start.offset;
 }
 
+/**
+ * Return a node's end offset for Prettier's cursor
+ * tracking and range formatting.
+ * @param node - Any AST node with a position
+ * @returns Zero-based exclusive end offset in source
+ */
 function locEnd(node: BlockNode | DocumentNode): number {
   return node.position.end.offset;
 }
 
-// Type guard avoids an unsafe `as` cast. Chevrotain's visitor returns `unknown`
-// because it can't know our AST types — this verifies the shape at runtime.
+/**
+ * Type guard: verify that the AST builder returned a
+ * DocumentNode. Chevrotain's visitor returns `unknown`,
+ * so this avoids an unsafe `as` cast.
+ * @param value - Return value from astBuilder.visit()
+ * @returns True when value is a DocumentNode
+ */
 function isDocumentNode(value: unknown): value is DocumentNode {
   return (
     typeof value === "object" &&
@@ -39,7 +54,15 @@ function isDocumentNode(value: unknown): value is DocumentNode {
   );
 }
 
-/** Run the full parse pipeline: lex → parse → build AST. */
+/**
+ * Run the full parse pipeline: lex, parse, build AST.
+ *
+ * This is both the Prettier `Parser.parse` entry point and a
+ * named export so tests can exercise the parser directly
+ * without going through Prettier's formatting pipeline.
+ * @param text - Full AsciiDoc source document
+ * @returns Root DocumentNode of the AST
+ */
 export function parse(text: string): DocumentNode {
   // The lexer may produce errors for unrecognized characters,
   // but still returns a usable token stream. We don't throw
