@@ -27,7 +27,7 @@ import {
   SAFE_DELIMITER_PAD,
 } from "./constants.js";
 import { CHECKBOX_PREFIX_LEN } from "./parse/block-helpers.js";
-import { wordsToFillParts } from "./reflow.js";
+import { flattenForFill, wordsToFillParts } from "./reflow.js";
 import { joinBlocks } from "./print-join.js";
 
 const {
@@ -645,7 +645,7 @@ export function printListItem(
   // Separate inline children (text, bold, hardLineBreak, etc.)
   // from nested lists. Inline children are reflowed inside a
   // fill(); nested lists follow on their own lines.
-  const inlineParts: Doc[] = [];
+  const inlineChildren: Doc[] = [];
   const nestedListParts: Doc[] = [];
 
   for (const [index, child] of node.children.entries()) {
@@ -655,16 +655,13 @@ export function printListItem(
       // hardline break, outside the fill.
       nestedListParts.push(hardline, printedChild);
     } else {
-      // Inline node: collect into parts for fill(). The
-      // printed inline node is either a Doc[] (text words
-      // interleaved with `line`) or a single Doc (marks,
-      // hard line breaks, etc.).
-      const flat = Array.isArray(printedChild)
-        ? (printedChild as Doc[])
-        : [printedChild];
-      inlineParts.push(...flat);
+      // Inline node: collect for fill(). flattenForFill
+      // handles alignment when formatting mixes with text.
+      inlineChildren.push(printedChild);
     }
   }
+
+  const inlineParts = flattenForFill(inlineChildren);
 
   // Build the output: marker + space + checkbox + aligned
   // fill of inline content, followed by any nested lists.

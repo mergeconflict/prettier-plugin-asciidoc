@@ -125,13 +125,13 @@ describe("inline formatting — format output", () => {
 // while keeping the marks with their adjacent words.
 describe("inline formatting — reflow with inline marks", () => {
   test("reflow splits bold span across lines", async () => {
-    // printWidth: 10 forces a break after every word. The opening
-    // * attaches to "bold" (first word) and the closing * attaches
-    // to "here" (last word), so line breaks appear between words
-    // inside the span.
+    // printWidth: 10 forces a break inside the span. The marks
+    // are fused with the first/last words so fill() packs
+    // greedily: "*bold text" (10 chars) fits, then "here*"
+    // goes on the next line.
     const input = "*bold text here*\n";
     const result = await formatAdoc(input, { printWidth: 10 });
-    expect(result).toBe("*bold\ntext\nhere*\n");
+    expect(result).toBe("*bold text\nhere*\n");
   });
 
   test("reflow wraps around inline marks", async () => {

@@ -216,3 +216,87 @@ describe("paragraph reflow", () => {
     expect(second).toBe(first);
   });
 });
+
+describe("inline emphasis reflow", () => {
+  // Emphasis spans should reflow like normal text — breaking
+  // only where needed to fit printWidth, not on every space.
+  test("italic emphasis reflows without over-breaking", async () => {
+    const input = "_word word word word_\n";
+    const result = await formatAdoc(input, { printWidth: 15 });
+    // Should break only where needed, not on every space.
+    // With printWidth=15, "_word word" (10 chars) fits,
+    // then "word word_" (10 chars) fits on the next line.
+    expect(result).toBe("_word word word\nword_\n");
+  });
+
+  test("bold emphasis reflows without over-breaking", async () => {
+    const input = "*word word word word word*\n";
+    const result = await formatAdoc(input, { printWidth: 15 });
+    expect(result).toBe("*word word word\nword word*\n");
+  });
+
+  test("emphasis reflow is idempotent", async () => {
+    const input = "_word word word word_\n";
+    const first = await formatAdoc(input, { printWidth: 15 });
+    const second = await formatAdoc(first, { printWidth: 15 });
+    expect(second).toBe(first);
+  });
+});
+
+// fill() alignment: when inline formatting nodes (italic, bold,
+// xref, monospace) are adjacent to text without whitespace
+// (e.g. `_word_,`), the fill() content/separator alternation
+// must be preserved so that line breaks happen correctly.
+describe("inline formatting respects printWidth", () => {
+  // Italic followed by comma: `_bravo_,` has no space at
+  // the junction. Without alignment-aware flattening, the
+  // comma lands in a fill() separator slot and breaks all
+  // subsequent line-break decisions.
+  test("italic followed by punctuation does not overflow", async () => {
+    const input =
+      "alpha _bravo_, charlie delta echo foxtrot " +
+      "golf hotel india juliet kilo lima mike.\n";
+    const result = await formatAdoc(input, { printWidth: 40 });
+    for (const line of result.trimEnd().split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(40);
+    }
+  });
+
+  // Xref in parentheses: `(<<target,label>>)` — three
+  // children (text "(", xref, text ")") all lack whitespace
+  // at boundaries, so fill() alignment shifts twice.
+  test("xref in parentheses does not overflow", async () => {
+    const input =
+      "see the spec (<<rfc1234,RFC 1234>>) " +
+      "for more detail on this topic.\n";
+    const result = await formatAdoc(input, { printWidth: 30 });
+    for (const line of result.trimEnd().split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(30);
+    }
+  });
+
+  // Bold span in a list item followed by a colon: the
+  // list item printer assembles fill() parts the same way
+  // paragraphs do, so it needs the same alignment fix.
+  test("bold in list item does not overflow", async () => {
+    const input =
+      "* **Term one** (see <<ref>>): alpha bravo " +
+      "charlie delta echo foxtrot golf hotel.\n";
+    const result = await formatAdoc(input, { printWidth: 40 });
+    for (const line of result.trimEnd().split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(40);
+    }
+  });
+
+  // Monospace followed by punctuation: same pattern as
+  // italic — closing backtick directly before comma.
+  test("monospace followed by punctuation does not overflow", async () => {
+    const input =
+      "run `deploy`, then check the logs " +
+      "for errors in the output stream.\n";
+    const result = await formatAdoc(input, { printWidth: 30 });
+    for (const line of result.trimEnd().split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(30);
+    }
+  });
+});

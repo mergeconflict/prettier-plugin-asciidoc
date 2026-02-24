@@ -1,23 +1,27 @@
 /**
- * Paragraph reflow safety — prevents fill() from placing words
- * at line-start positions where AsciiDoc would re-parse them as
- * block syntax.
+ * Paragraph reflow utilities — ensures fill() wraps text
+ * correctly when inline formatting is present.
  *
- * When Prettier's fill() wraps text, any word can land at
- * column 0. Words that match block-level lexer tokens at line
- * start (block titles, delimiters, list markers, etc.) must be
- * glued to the preceding word so fill() treats the pair as an
- * indivisible unit.
+ * Two concerns are handled:
  *
- * The patterns here mirror the line-start-sensitive tokens
- * defined in src/parse/tokens.ts (and src/parse/inline-macro-tokens.ts
- * for the macro subset).
+ * 1. **Block-syntax safety** (`wordsToFillParts`): prevents
+ *    fill() from placing words at column 0 where AsciiDoc
+ *    would re-parse them as block syntax (titles, delimiters,
+ *    list markers, etc.). Patterns mirror the line-start
+ *    tokens in src/parse/tokens.ts.
+ *
+ * 2. **Fill alignment** (`flattenForFill`): when inline
+ *    formatting nodes (italic, bold, xref, ...) are embedded
+ *    in a paragraph, a naive `.flat()` can break the
+ *    content/separator alternation that fill() expects.
+ *    flattenForFill detects adjacent content elements and
+ *    fuses them, maintaining the fill() protocol.
  */
 import { doc, type Doc } from "prettier";
-import { EMPTY, MIN_DELIMITER_LENGTH } from "./constants.js";
+import { EMPTY, LAST_ELEMENT, MIN_DELIMITER_LENGTH } from "./constants.js";
 
 const {
-  builders: { line },
+  builders: { line, literalline },
 } = doc;
 
 // ── Pattern constants ──────────────────────────────────────
@@ -204,4 +208,81 @@ export function wordsToFillParts(words: string[]): Doc[] {
   }
 
   return parts;
+}
+
+// ── Fill alignment ─────────────────────────────────────────
+
+// Prettier's `line` and `literalline` are the only
+// separator-type Docs used in fill() arrays by this
+// plugin. Checking reference identity (===) is safe
+// because these are module-level singletons exported from
+// Prettier's doc.builders.
+
+/**
+ * Check whether a Doc element is a line-type separator
+ * (Prettier's `line` or `literalline`). Used by
+ * flattenForFill to distinguish fill-content elements from
+ * fill-separator elements.
+ * @param element - A Doc element from the fill parts array.
+ * @returns True when the element is a line separator
+ */
+function isLineSeparator(element: Doc): boolean {
+  return element === line || element === literalline;
+}
+
+/**
+ * Flatten an array of child Doc outputs into a single
+ * fill()-compatible array, preserving the content/separator
+ * alternation that fill() requires.
+ *
+ * Prettier's fill() expects `[content, sep, content, ...]`
+ * where even-indexed elements are content and odd-indexed
+ * are separators (`line`). A naive `.flat()` breaks this
+ * invariant when inline formatting nodes (italic, bold,
+ * xref, etc.) contribute elements to the array without
+ * a `line` separator at the junction with adjacent text.
+ *
+ * For example, `_Nexus_,` produces three children whose
+ * flattened parts look like:
+ *   `[..., "and", line, "_Nexus_", ",", line, "the", ...]`
+ * The comma at index 3 is in a separator position but is
+ * really content. This function detects adjacent content
+ * elements (neither is a `line` separator) and fuses them
+ * into a single content unit, fixing the alignment.
+ * @param children - Array of Doc values returned by
+ *   `path.map(print, "children")`, one per child node.
+ *   Each may be an array of fill parts (text, formatting)
+ *   or a single atomic Doc (xref string, etc.).
+ * @returns Flat Doc array suitable for fill(), with
+ *   content and separator elements properly alternating
+ */
+export function flattenForFill(children: Doc[]): Doc[] {
+  const result: Doc[] = [];
+
+  for (const child of children) {
+    // Spread one level (equivalent to .flat()): array
+    // children contribute their individual elements;
+    // non-array Docs (strings, Doc commands) contribute
+    // a single element.
+    const elements: Doc[] = Array.isArray(child) ? (child as Doc[]) : [child];
+
+    for (const element of elements) {
+      if (
+        result.length > EMPTY &&
+        !isLineSeparator(result[result.length + LAST_ELEMENT]) &&
+        !isLineSeparator(element)
+      ) {
+        // Two adjacent content elements with no separator
+        // between them: fuse into one content unit so
+        // fill() keeps them together and measures their
+        // combined width correctly.
+        const lastIndex = result.length + LAST_ELEMENT;
+        result[lastIndex] = [result[lastIndex], element];
+      } else {
+        result.push(element);
+      }
+    }
+  }
+
+  return result;
 }

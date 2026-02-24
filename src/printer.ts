@@ -23,6 +23,7 @@
 import { doc, type Printer, type Doc } from "prettier";
 import { EMPTY, MARKER_OFFSET } from "./constants.js";
 import { printInlineNode } from "./print-inline.js";
+import { flattenForFill } from "./reflow.js";
 import { joinBlocks } from "./print-join.js";
 import {
   type AnyNode,
@@ -110,7 +111,9 @@ const printer: Printer<AnyNode> = {
         // Reflow paragraph text to printWidth using fill. The text
         // children produce word/line pairs; fill packs as many words
         // as possible onto each line before wrapping.
-        return fill(path.map(print, "children").flat());
+        // flattenForFill (not .flat()) ensures proper fill()
+        // alignment when inline formatting is mixed with text.
+        return fill(flattenForFill(path.map(print, "children")));
       }
       case "list": {
         return printList(path, print);

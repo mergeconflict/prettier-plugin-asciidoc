@@ -26,8 +26,8 @@ import {
   footnoteToSource,
   passthroughToSource,
 } from "./serialize-inline.js";
-import { EMPTY } from "./constants.js";
-import { wordsToFillParts } from "./reflow.js";
+import { EMPTY, FIRST, LAST_ELEMENT } from "./constants.js";
+import { flattenForFill, wordsToFillParts } from "./reflow.js";
 
 const {
   builders: { line, literalline },
@@ -118,8 +118,20 @@ export function printInlineNode(
       const markMap = { bold: "*", italic: "_", monospace: "`" };
       const { [node.type]: singleMark } = markMap;
       const mark = node.constrained ? singleMark : `${singleMark}${singleMark}`;
-      const inner = path.map(print, "children");
-      return [mark, ...inner, mark];
+      // Flatten children so their fill-compatible parts
+      // (word, line, word, ...) participate directly in the
+      // enclosing fill(). flattenForFill (not .flat())
+      // maintains fill() alignment when nested inline
+      // nodes are present. Fuse the opening/closing marks
+      // with the first/last content elements so the marks
+      // stay adjacent to words (required for AsciiDoc
+      // constrained formatting) and fill() accounts for
+      // their width when deciding where to break.
+      const parts = flattenForFill(path.map(print, "children"));
+      const lastIndex = parts.length + LAST_ELEMENT;
+      parts[FIRST] = [mark, parts[FIRST]];
+      parts[lastIndex] = [parts[lastIndex], mark];
+      return parts;
     }
     case "highlight": {
       // A role attribute gives the span semantic meaning used
@@ -129,8 +141,13 @@ export function printInlineNode(
       // inline here, not through the block printer.
       const mark = node.constrained ? "#" : "##";
       const rolePrefix = node.role === undefined ? "" : `[${node.role}]`;
-      const inner = path.map(print, "children");
-      return [rolePrefix, mark, ...inner, mark];
+      // Same flattening + fusing as bold/italic/monospace
+      // above — see comment there for rationale.
+      const parts = flattenForFill(path.map(print, "children"));
+      const lastIndex = parts.length + LAST_ELEMENT;
+      parts[FIRST] = [rolePrefix, mark, parts[FIRST]];
+      parts[lastIndex] = [parts[lastIndex], mark];
+      return parts;
     }
     // Source-preserved constructs: these nodes are emitted
     // verbatim from the AST without reformatting. Prettier
