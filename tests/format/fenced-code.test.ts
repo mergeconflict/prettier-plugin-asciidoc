@@ -54,7 +54,10 @@ describe("fenced code block formatting", () => {
 
   // When [source,python] precedes ```python, the printer
   // should deduplicate the attribute list, not emit it twice.
-  test.todo(
-    "deduplicates [source,lang] when fenced block already has language",
-  );
+  test("deduplicates [source,lang] when fenced block already has language", async () => {
+    const input = "[source,python]\n```python\nprint('hello')\n```\n";
+    const result = await formatAdoc(input);
+    // The [source,python] attribute list should appear exactly once.
+    expect(result).toBe("[source,python]\n----\nprint('hello')\n----\n");
+  });
 });

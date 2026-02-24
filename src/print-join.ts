@@ -1,0 +1,200 @@
+/**
+ * Block stacking and joining logic for the AsciiDoc
+ * printer.
+ *
+ * Determines how adjacent block-level nodes are
+ * separated: stacked on adjacent lines (single newline)
+ * or separated by a blank line (double newline). Used by
+ * the main printer and by block-printing helpers that
+ * contain child blocks.
+ */
+import { doc, type Doc } from "prettier";
+import type { BlockNode } from "./ast.js";
+import { EMPTY, FIRST, NEXT } from "./constants.js";
+
+const {
+  builders: { hardline },
+} = doc;
+// Index of the second child in a block array (offset 1 from
+// zero). Also serves as the loop increment in joinBlocks
+// (advance by one). Both uses share the numeric value 1.
+const SECOND_CHILD = 1;
+
+/**
+ * Tests whether a block is a line comment.
+ *
+ * Line comments and attribute entries are special cases
+ * for block separation: consecutive elements of either
+ * type should appear on adjacent lines, not separated by
+ * a blank line like other block elements. This matches
+ * idiomatic AsciiDoc style.
+ * @param block - The block node to test.
+ * @returns Whether the block is a line comment.
+ */
+function isLineComment(block: BlockNode): boolean {
+  return block.type === "comment" && block.commentType === "line";
+}
+
+/**
+ * Tests whether a block is an attribute entry.
+ *
+ * Used alongside {@link isLineComment} to determine
+ * stacking: consecutive attribute entries appear on
+ * adjacent lines without a blank-line separator.
+ * @param block - The block node to test.
+ * @returns Whether the block is an attribute entry.
+ */
+function isAttributeEntry(block: BlockNode): boolean {
+  return block.type === "attributeEntry";
+}
+
+/**
+ * Tests whether a block is a document title.
+ *
+ * Used in stacking logic: a document title followed
+ * by attribute entries forms a contiguous header
+ * (`= Title` then `:attr: value` with no blank line).
+ * @param block - The block node to test.
+ * @returns Whether the block is a document title.
+ */
+function isDocumentTitle(block: BlockNode): boolean {
+  return block.type === "documentTitle";
+}
+
+/**
+ * Tests whether a block is a paragraph whose only child
+ * is an inline anchor (`[[id]]`).
+ *
+ * These act as block metadata when they appear on a
+ * standalone line, but unlike true metadata tokens they
+ * would merge with a following paragraph on re-parse
+ * (breaking idempotency), so stacking needs special
+ * treatment.
+ * @param block - The block node to test.
+ * @returns Whether the block is an anchor-only paragraph.
+ */
+function isAnchorParagraph(block: BlockNode): boolean {
+  return (
+    block.type === "paragraph" &&
+    block.children.length === NEXT &&
+    block.children[FIRST].type === "inlineAnchor"
+  );
+}
+
+/**
+ * Tests whether a block's content would merge with a
+ * preceding anchor paragraph if no blank line separated
+ * them.
+ *
+ * Plain paragraphs and paragraph-form admonitions both
+ * start with ordinary text that the parser would absorb
+ * into the anchor's paragraph on re-parse, breaking
+ * idempotency. A blank line must be preserved before
+ * these blocks when they follow an anchor paragraph.
+ * @param block - The block node to test.
+ * @returns Whether this block would merge with a
+ *   preceding anchor paragraph.
+ */
+function wouldMergeWithAnchor(block: BlockNode): boolean {
+  return (
+    (block.type === "paragraph" && !isAnchorParagraph(block)) ||
+    (block.type === "admonition" && block.form === "paragraph")
+  );
+}
+
+/**
+ * Tests whether a block is block metadata (attribute
+ * list, block title, or anchor paragraph).
+ *
+ * Block metadata stacks with the following block — no
+ * blank line between them. This matches idiomatic
+ * AsciiDoc where `[source,ruby]` sits directly above
+ * `----` with no intervening blank line.
+ * @param block - The block node to test.
+ * @returns Whether the block is block metadata.
+ */
+function isBlockMetadata(block: BlockNode): boolean {
+  return (
+    block.type === "blockAttributeList" ||
+    block.type === "blockTitle" ||
+    isAnchorParagraph(block)
+  );
+}
+
+/**
+ * Checks whether the block at `index` and the one before
+ * it should be stacked on adjacent lines (single newline,
+ * no blank line).
+ *
+ * Stacking applies to:
+ * - Consecutive line comments (idiomatic stacking)
+ * - Consecutive attribute entries (idiomatic stacking)
+ * - Document title followed by attribute entry (the
+ *   contiguous header pattern: `= Title` then
+ *   `:attr: value` with no blank line)
+ *
+ * The reverse (attribute entry before title) is
+ * intentionally absent: in AsciiDoc, attributes follow
+ * the title — they never precede it.
+ *
+ * Lists always get a blank-line separator — no stacking
+ * conditions needed for list nodes. If future block types
+ * (delimited blocks, tables) introduce more stacking
+ * patterns, consider switching to a node property (e.g.
+ * `stackable`) instead of pairwise checks.
+ * @param blocks - The full array of sibling block nodes.
+ * @param index - Index of the current block (must be
+ *   at least 1 so the previous block exists).
+ * @returns Whether the two blocks should stack without
+ *   a blank-line separator.
+ */
+function shouldStack(blocks: BlockNode[], index: number): boolean {
+  const { [index - SECOND_CHILD]: previous, [index]: current } = blocks;
+  return (
+    (isLineComment(previous) && isLineComment(current)) ||
+    (isAttributeEntry(previous) && isAttributeEntry(current)) ||
+    (isDocumentTitle(previous) && isAttributeEntry(current)) ||
+    // Block metadata (attribute lists, anchors, titles) stacks
+    // with each other and with the block that follows them.
+    // Exception: anchor paragraphs must NOT stack with plain
+    // paragraphs — on re-parse the anchor would merge into the
+    // paragraph text, breaking idempotency.
+    (isBlockMetadata(previous) &&
+      (!isAnchorParagraph(previous) || !wouldMergeWithAnchor(current)))
+  );
+}
+
+/**
+ * Joins printed block children with appropriate
+ * separators.
+ *
+ * Consecutive line comments and other stacked pairs get a
+ * single newline; all other adjacent pairs get a blank
+ * line (double hardline). This is the central block
+ * separation logic — every block-level container routes
+ * through here.
+ * @param blocks - The original AST block nodes, used to
+ *   determine stacking relationships between adjacent
+ *   siblings.
+ * @param printed - The corresponding Doc IR produced by
+ *   printing each block.
+ * @returns A single Doc with blocks separated by the
+ *   correct number of newlines.
+ */
+export function joinBlocks(blocks: BlockNode[], printed: Doc[]): Doc {
+  const result: Doc[] = [printed[EMPTY]];
+  for (
+    let index = SECOND_CHILD;
+    index < printed.length;
+    index += SECOND_CHILD
+  ) {
+    // Stacked blocks (consecutive comments, consecutive attribute
+    // entries, or document title + attribute entry in a header)
+    // use a single newline. All other pairs get a blank line.
+    const separator: Doc = shouldStack(blocks, index)
+      ? hardline
+      : [hardline, hardline];
+    result.push(separator, printed[index]);
+  }
+  return result;
+}
