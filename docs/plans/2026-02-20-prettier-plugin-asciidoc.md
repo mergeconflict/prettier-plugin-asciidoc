@@ -86,18 +86,18 @@ that feedback so it's not forgotten.
 - [x] Task 14b: Inline parser hardening — test gaps, architectural improvements, token dispatch cleanup
 - [x] Task 15: Inline parser — links and cross-references
 - [x] Task 16: Inline parser — macros, passthroughs, line breaks
-- [ ] Task 17: Parse description lists
-- [ ] Task 18: Parse tables
 - [ ] Task 19: Parse block macros
 - [ ] Task 20: Parse include directives
 - [ ] Task 21: Parse conditional directives
-- [ ] Task 23: List continuation and complex list items
+- [ ] Task 27: Plugin options
+- [ ] Task 29: Parse explicit ordered list markers
+- [ ] Task 26: End-to-end integration tests
+- [ ] Task 17: Parse description lists
 - [ ] Task 24: Superscript, subscript, and character references
 - [ ] Task 24b: Index terms
-- [ ] Task 26: End-to-end integration tests
-- [ ] Task 27: Plugin options
 - [ ] Task 28: Parse underline-style section titles
-- [ ] Task 29: Parse explicit ordered list markers
+- [ ] Task 23: List continuation and complex list items
+- [ ] Task 18: Parse tables
 
 Details of completed tasks have been removed from this plan.
 
@@ -392,26 +392,38 @@ jj new
 
 ---
 
-## Task 26: End-to-end integration tests on real documents
+## Task 26: Integration tests on local documents
 
-Test the full format pipeline on realistic AsciiDoc documents.
+Run the formatter against any `.adoc` files the developer drops into a
+git-ignored local directory. Assert two properties on each document:
+
+1. **Semantic preservation**: `asciidoctor(doc) === asciidoctor(prettier(doc))`
+2. **Idempotency**: `prettier(doc) === prettier(prettier(doc))`
+
+Uses `@asciidoctor/core` (JS port) as a dev dependency for in-process HTML
+rendering. Exact string match on HTML output; add normalization only if we
+hit false failures. Tests skip gracefully when the fixtures directory is empty.
+
+No checked-in fixtures, no snapshots, no references to any specific document
+source.
 
 **Files:**
 
-- Create: `tests/format/fixtures/real-world/` — a few substantial `.adoc` files
-- Create: `tests/format/real-world.test.ts`
+- Add: `@asciidoctor/core` as dev dependency
+- Create: `tests/integration/fixtures/.gitkeep` (directory tracked, contents ignored)
+- Add: `tests/integration/fixtures/` to `.gitignore`
+- Create: `tests/integration/local-docs.test.ts`
 
 **Key test cases:**
 
-- Format is idempotent (formatting twice produces same output)
-- A document with mixed elements (header, sections, lists, code blocks, tables, comments)
-- Formatting preserves document semantics (round-trip through Asciidoctor.js produces same HTML)
-- UTF-8 BOM handling — file with BOM prefix is parsed correctly, BOM stripped in output (gap 22)
+- Semantic preservation: HTML output unchanged after formatting
+- Idempotency: formatting twice produces same output
+- Empty fixtures directory: tests skip, no failures
 
 **Commit:**
 
 ```
-jj describe -m "feat: end-to-end integration tests"
+jj describe -m "feat: integration tests for local documents"
 jj new
 ```
 
